@@ -12,20 +12,23 @@ export function createStore({ onPersist } = {}) {
   const state = {
     items: [],            // graph item: {id,type:'graph',speaker,title,diagramType,nodes,edges,turnId,createdAt,updatedAt}
     summaries: {},        // section -> [{id, text, coversTurnIds:[]}]
+    transcripts: [],      // raw transcript chunks: {id, speaker, speakerId, text, at, source, meetingId}
     turns: [],            // {id, speaker, text, startedAt, endedAt}
     processedTurnIds: new Set(),
   };
 
-  function hydrate({ items, turns, summaries }) {
+  function hydrate({ items, turns, summaries, transcripts }) {
     if (items) state.items = items;
     if (turns) state.turns = turns;
     if (summaries) state.summaries = summaries;
+    if (transcripts) state.transcripts = transcripts;
   }
 
   function dumpState() {
     return {
       items: state.items,
       summaries: state.summaries,
+      transcripts: state.transcripts,
       turns: state.turns,
     };
   }
@@ -52,7 +55,26 @@ export function createStore({ onPersist } = {}) {
       sections: SECTIONS,
       items: state.items,
       summaries: state.summaries,
+      transcripts: state.transcripts.slice(-200),
     };
+  }
+
+  function addTranscript(entry) {
+    const transcript = {
+      id: uid('tr'),
+      speaker: String(entry.speaker || '').trim(),
+      speakerId: entry.speakerId || null,
+      source: entry.source || 'manual',
+      meetingId: entry.meetingId || null,
+      text: String(entry.text || '').trim(),
+      at: entry.at || Date.now(),
+    };
+    if (!transcript.speaker || !transcript.text) return null;
+    state.transcripts.push(transcript);
+    if (state.transcripts.length > 500) state.transcripts.splice(0, state.transcripts.length - 500);
+    publish({ type: 'transcript.added', transcript });
+    persist('transcript.add', transcript);
+    return transcript;
   }
 
   function addTurn(turn) {
@@ -219,7 +241,7 @@ export function createStore({ onPersist } = {}) {
   return {
     SECTIONS,
     listItems, getItem, getBoard,
-    addTurn, markTurnsProcessed, unprocessedTurns, recentTurns,
+    addTranscript, addTurn, markTurnsProcessed, unprocessedTurns, recentTurns,
     applyDiff,
     confirmItem, pinItem,
     setSummary,

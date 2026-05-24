@@ -5,6 +5,7 @@ const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8787';
 export function useBoardStream(boardId = 'default') {
   const [items, setItems] = useState([]);
   const [summaries, setSummaries] = useState({});
+  const [transcripts, setTranscripts] = useState([]);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
@@ -16,6 +17,7 @@ export function useBoardStream(boardId = 'default') {
         if (!board || cancelled) return;
         setItems(board.items || []);
         setSummaries(board.summaries || {});
+        setTranscripts(board.transcripts || []);
       })
       .catch(() => {});
 
@@ -31,6 +33,7 @@ export function useBoardStream(boardId = 'default') {
         const data = JSON.parse(e.data);
         setItems(data.board.items || []);
         setSummaries(data.board.summaries || {});
+        setTranscripts(data.board.transcripts || []);
       } catch {}
     });
 
@@ -49,6 +52,14 @@ export function useBoardStream(boardId = 'default') {
           next[data.section] = [...(next[data.section] || []), data.entry];
           return next;
         });
+      } catch {}
+    });
+
+    es.addEventListener('transcript.added', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (!data.transcript) return;
+        setTranscripts((prev) => [...prev, data.transcript].slice(-200));
       } catch {}
     });
 
@@ -102,7 +113,7 @@ export function useBoardStream(boardId = 'default') {
     } catch {}
   }, [boardId]);
 
-  return { items, aiItems, summaries, connected, confirmItem, dismissItem, pinItem, addHumanItem, loadCanvas, saveCanvas };
+  return { items, aiItems, summaries, transcripts, connected, confirmItem, dismissItem, pinItem, addHumanItem, loadCanvas, saveCanvas };
 }
 
 function applyOps(prev, ops) {

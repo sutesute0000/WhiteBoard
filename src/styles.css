@@ -542,6 +542,101 @@ input[type="range"].size::-moz-range-thumb {
   transition: width 0.08s linear;
 }
 
+.transcript-dock {
+  position: fixed;
+  right: 18px;
+  top: 62px;
+  width: min(340px, calc(100vw - 36px));
+  max-height: calc(100vh - 132px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px) saturate(140%);
+  z-index: 11;
+  overflow: hidden;
+}
+
+.transcript-dock,
+.transcript-dock * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.transcript-dock-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--panel-border);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.transcript-dock-head span:last-child {
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+
+.transcript-list {
+  overflow: auto;
+  padding: 8px;
+}
+
+.transcript-empty {
+  padding: 16px 10px;
+  color: var(--text-mute);
+  font-size: 12px;
+  text-align: center;
+}
+
+.transcript-entry {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(20, 25, 40, 0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.transcript-entry + .transcript-entry {
+  margin-top: 7px;
+}
+
+.transcript-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.transcript-meta time {
+  flex: 0 0 auto;
+  color: var(--text-mute);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.transcript-text {
+  color: var(--text);
+  font-family: var(--handwriting);
+  font-size: 14px;
+  line-height: 1.55;
+  word-break: break-word;
+  cursor: grab;
+}
+
+.transcript-text:active {
+  cursor: grabbing;
+}
+
 /* ─── AI layer (world-transformed overlay for AI cards) ─────────────────────────────── */
 .ai-layer {
   position: absolute;

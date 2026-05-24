@@ -39,7 +39,7 @@ export function createBoardManager() {
           createdAt: board.createdAt || Date.now(),
           updatedAt: board.updatedAt || Date.now(),
           canvas: Array.isArray(board.canvas) ? board.canvas : [],
-          state: board.state || { items: [], summaries: {}, turns: [] },
+          state: board.state || { items: [], summaries: {}, transcripts: [], turns: [] },
         });
       }
     } catch (e) {
@@ -77,7 +77,7 @@ export function createBoardManager() {
       createdAt: ts,
       updatedAt: ts,
       canvas: [],
-      state: { items: [], summaries: {}, turns: [] },
+      state: { items: [], summaries: {}, transcripts: [], turns: [] },
     };
     records.set(id, rec);
     scheduleSave();

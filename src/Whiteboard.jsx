@@ -62,7 +62,7 @@ export default function Whiteboard() {
   const [, force] = useState(0);
   const rerender = useCallback(() => force(n => n + 1), []);
 
-  const { items: streamItems, connected, loadCanvas, saveCanvas } = useBoardStream(boardId);
+  const { items: streamItems, transcripts, connected, loadCanvas, saveCanvas } = useBoardStream(boardId);
   const graphItems = useMemo(() => streamItems.filter(it => it.type === 'graph'), [streamItems]);
   const micSpeakerRef = useRef(micSpeakerId);
   micSpeakerRef.current = micSpeakerId;
@@ -168,6 +168,23 @@ export default function Whiteboard() {
     drawSelection(ctx, v);
     if (stateRef.current.marquee) drawMarquee(ctx, v);
   }, []);
+
+  const addTextItemAt = useCallback((worldX, worldY, text) => {
+    const value = String(text || '').trim();
+    if (!value) return;
+    pushHistory();
+    stateRef.current.items.push({
+      id: uid(),
+      type: 'text',
+      x: worldX,
+      y: worldY,
+      text: value,
+      color: colorRef.current,
+      size: Math.max(18, sizeRef.current * 5),
+    });
+    draw();
+    rerender();
+  }, [draw, rerender]);
 
   useEffect(() => {
     refreshBoards();
@@ -748,12 +765,28 @@ export default function Whiteboard() {
       draw();
     };
 
+    const onDragOver = (e) => {
+      if (!e.dataTransfer?.types?.includes('text/plain')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    };
+
+    const onDrop = (e) => {
+      const text = e.dataTransfer?.getData('text/plain') || '';
+      if (!text.trim()) return;
+      e.preventDefault();
+      const wp = worldFromScreen(e.clientX, e.clientY);
+      addTextItemAt(wp.x, wp.y, text);
+    };
+
     canvas.addEventListener('pointerdown', onPointerDown);
     canvas.addEventListener('pointermove', onPointerMove);
     canvas.addEventListener('pointerup', onPointerUp);
     canvas.addEventListener('pointercancel', onPointerUp);
     canvas.addEventListener('dblclick', onDoubleClick);
     canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('dragover', onDragOver);
+    canvas.addEventListener('drop', onDrop);
     return () => {
       canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('pointermove', onPointerMove);
@@ -761,8 +794,10 @@ export default function Whiteboard() {
       canvas.removeEventListener('pointercancel', onPointerUp);
       canvas.removeEventListener('dblclick', onDoubleClick);
       canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('dragover', onDragOver);
+      canvas.removeEventListener('drop', onDrop);
     };
-  }, [draw, rerender, textInput]);
+  }, [addTextItemAt, draw, rerender, textInput]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -1096,6 +1131,7 @@ export default function Whiteboard() {
           <span className="speech-debug-text">{speechError || speechInterimText || speechLastText || speechStatus || 'listening...'}</span>
         </div>
       )}
+      <TranscriptDock transcripts={transcripts} />
       <div className="bottom-bar">
         <button className="tool" onClick={() => setZoomLevel(1/1.2)} data-tooltip="縮小"><Icon><line x1="5" y1="12" x2="19" y2="12"/></Icon></button>
         <div className="zoom-label">{Math.round(zoom * 100)}%</div>
@@ -1105,6 +1141,57 @@ export default function Whiteboard() {
       </div>
     </div>
   );
+}
+
+function TranscriptDock({ transcripts }) {
+  const latest = Array.isArray(transcripts) ? transcripts.slice(-80).reverse() : [];
+  const onDragStart = (e, text) => {
+    const selection = window.getSelection();
+    const selectedText = selection && e.currentTarget.contains(selection.anchorNode)
+      ? selection.toString().trim()
+      : '';
+    const value = selectedText || String(text || '').trim();
+    if (!value) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.setData('text/plain', value);
+    e.dataTransfer.effectAllowed = 'copy';
+  };
+
+  return (
+    <aside className="transcript-dock" aria-label="文字起こし">
+      <div className="transcript-dock-head">
+        <span>文字起こし</span>
+        <span>{latest.length}</span>
+      </div>
+      <div className="transcript-list">
+        {latest.length === 0 ? (
+          <div className="transcript-empty">発言待ち</div>
+        ) : latest.map(entry => (
+          <div key={entry.id} className="transcript-entry">
+            <div className="transcript-meta">
+              <span>{entry.speaker || 'Unknown'}</span>
+              <time>{formatTranscriptTime(entry.at)}</time>
+            </div>
+            <p
+              className="transcript-text"
+              draggable
+              onDragStart={(e) => onDragStart(e, entry.text)}
+            >
+              {entry.text}
+            </p>
+          </div>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+function formatTranscriptTime(value) {
+  const date = new Date(value || Date.now());
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function graphToCanvasItems(graph, index) {

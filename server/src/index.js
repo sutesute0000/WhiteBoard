@@ -102,7 +102,9 @@ fastify.post('/transcript', async (req, reply) => {
   // body: {speaker:string, text:string, at?:number}
   const { speaker, text, at } = normalizeTranscript(req.body, 'manual');
   if (!speaker || !text) return reply.code(400).send({ error: 'speaker and text required' });
-  ctx.turnBuf.add({ speaker, text, at });
+  const turn = { speaker, text, at };
+  ctx.store.addTranscript(turn);
+  ctx.turnBuf.add(turn);
   return { ok: true, status: ctx.orch.status() };
 });
 
@@ -112,6 +114,7 @@ fastify.post('/transcript/external', async (req, reply) => {
   // speakerId は実名ではなく、話者交代検出用の安定IDとして扱う。
   const turn = normalizeTranscript(req.body, req.body?.source || 'external');
   if (!turn.speaker || !turn.text) return reply.code(400).send({ error: 'speakerId or speaker, and text required' });
+  ctx.store.addTranscript(turn);
   ctx.turnBuf.add(turn);
   return { ok: true, speaker: turn.speaker, status: ctx.orch.status() };
 });
@@ -124,6 +127,7 @@ fastify.post('/teams/transcript', async (req, reply) => {
   if (!turn.speaker || !turn.text) return reply.code(400).send({ error: 'speakerId or speaker, and text required' });
   if (req.body?.debugOnly) return { ok: true, debugOnly: true, speaker: turn.speaker };
   console.log('[teams/transcript]', turn.speaker, turn.speakerId || '-', turn.text.slice(0, 80));
+  ctx.store.addTranscript(turn);
   ctx.turnBuf.add(turn);
   return { ok: true, speaker: turn.speaker, status: ctx.orch.status() };
 });
