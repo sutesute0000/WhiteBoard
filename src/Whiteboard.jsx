@@ -53,6 +53,7 @@ export default function Whiteboard() {
   const [tool, setTool] = useState('select');
   const [color, setColor] = useState('#2b2d33');
   const [size, setSize] = useState(3);
+  const [textSize, setTextSize] = useState(24);
   const [zoom, setZoom] = useState(1);
   const [edgeType, setEdgeType] = useState('理由');
   const [customEdgeLabel, setCustomEdgeLabel] = useState('');
@@ -121,6 +122,7 @@ export default function Whiteboard() {
   const toolRef = useRef(tool); toolRef.current = tool;
   const colorRef = useRef(color); colorRef.current = color;
   const sizeRef = useRef(size); sizeRef.current = size;
+  const textSizeRef = useRef(textSize); textSizeRef.current = textSize;
   const edgeTypeRef = useRef(edgeType); edgeTypeRef.current = edgeType;
   const customEdgeLabelRef = useRef(customEdgeLabel); customEdgeLabelRef.current = customEdgeLabel;
 
@@ -129,7 +131,12 @@ export default function Whiteboard() {
     return { x: sx / v.scale - v.x, y: sy / v.scale - v.y };
   };
 
-  const openTextInputAt = useCallback((screenX, screenY, value = '', editingId = null) => {
+  const screenFromWorld = (wx, wy) => {
+    const v = stateRef.current.view;
+    return { x: (wx + v.x) * v.scale, y: (wy + v.y) * v.scale };
+  };
+
+  const openTextInputAt = useCallback((screenX, screenY, value = '', editingId = null, options = {}) => {
     const wp = worldFromScreen(screenX, screenY);
     setTextInput({
       screenX,
@@ -138,6 +145,10 @@ export default function Whiteboard() {
       worldY: wp.y,
       value,
       editingId,
+      color: options.color || colorRef.current,
+      size: options.size || textSizeRef.current,
+      minWidth: options.minWidth || 160,
+      minHeight: options.minHeight || 42,
     });
   }, []);
 
@@ -183,7 +194,7 @@ export default function Whiteboard() {
       y: worldY,
       text: value,
       color: colorRef.current,
-      size: Math.max(18, sizeRef.current * 5),
+      size: textSizeRef.current,
     });
     draw();
     rerender();
@@ -244,11 +255,25 @@ export default function Whiteboard() {
   useEffect(() => {
     if (!textInput || !textareaRef.current) return;
     const id = window.setTimeout(() => {
-      textareaRef.current?.focus();
-      textareaRef.current?.select();
+      const el = textareaRef.current;
+      if (!el) return;
+      el.style.width = `${textInput.minWidth || 160}px`;
+      el.style.height = 'auto';
+      el.style.width = `${Math.max(textInput.minWidth || 160, el.scrollWidth + 4)}px`;
+      el.style.height = `${Math.max(textInput.minHeight || 42, el.scrollHeight + 4)}px`;
+      el.focus();
+      el.select();
     }, 0);
     return () => window.clearTimeout(id);
-  }, [textInput?.editingId, textInput?.screenX, textInput?.screenY]);
+  }, [textInput?.editingId, textInput?.screenX, textInput?.screenY, textInput?.value, textInput?.size]);
+
+  useEffect(() => {
+    if (textInput) return;
+    const selected = [...stateRef.current.selected]
+      .map(id => stateRef.current.items.find(item => item.id === id))
+      .filter(item => item?.type === 'text');
+    if (selected.length === 1) setTextSize(selected[0].size || 24);
+  }, [selectionVersion, textInput]);
 
   function drawGrid(ctx, w, h, v) {
     const spacing = 40;
@@ -296,7 +321,7 @@ export default function Whiteboard() {
     }
     if (it.type === 'text') {
       ctx.fillStyle = it.color;
-      ctx.font = `400 ${it.size}px "Klee One", "Yomogi", "Yu Gothic UI", cursive`;
+      ctx.font = textFont(it.size);
       ctx.textBaseline = 'top';
       it.text.split('\n').forEach((line, i) => ctx.fillText(line, it.x, it.y + i * it.size * 1.3));
     }
@@ -447,7 +472,7 @@ export default function Whiteboard() {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     ctx.save();
-    ctx.font = `400 ${it.size}px "Klee One", "Yomogi", "Yu Gothic UI", cursive`;
+    ctx.font = textFont(it.size);
     const lines = it.text.split('\n');
     const width = Math.max(...lines.map(line => ctx.measureText(line).width), 1);
     ctx.restore();
@@ -746,6 +771,23 @@ export default function Whiteboard() {
       const wp = worldFromScreen(e.clientX, e.clientY);
       const hit = hitTest(wp.x, wp.y);
       if (!hit || !['text', 'graphNode', 'graphTitle', 'graphEdge'].includes(hit.type)) return;
+      if (hit.type === 'text') {
+        const b = boundsOf(hit);
+        const screen = screenFromWorld(hit.x, hit.y);
+        setTextInput({
+          screenX: screen.x,
+          screenY: screen.y,
+          worldX: hit.x,
+          worldY: hit.y,
+          value: hit.text || '',
+          editingId: hit.id,
+          color: hit.color || colorRef.current,
+          size: hit.size || textSizeRef.current,
+          minWidth: Math.max(160, (b.maxX - b.minX) * stateRef.current.view.scale + 24),
+          minHeight: Math.max(42, (b.maxY - b.minY) * stateRef.current.view.scale + 18),
+        });
+        return;
+      }
       const value = hit.type === 'text' ? hit.text : hit.label;
       setTextInput({
         screenX: e.clientX,
@@ -929,7 +971,11 @@ export default function Whiteboard() {
       if (value) {
         pushHistory();
         const it = findItem(textInput.editingId);
-        if (it?.type === 'text') it.text = value;
+        if (it?.type === 'text') {
+          it.text = value;
+          it.size = textInput.size || it.size || textSizeRef.current;
+          it.color = textInput.color || it.color || colorRef.current;
+        }
         else if (it) it.label = value;
         draw(); rerender();
       }
@@ -944,8 +990,8 @@ export default function Whiteboard() {
         x: textInput.worldX,
         y: textInput.worldY,
         text: value,
-        color,
-        size: Math.max(18, size * 5),
+        color: textInput.color || color,
+        size: textInput.size || textSize,
       });
       draw(); rerender();
     }
@@ -955,8 +1001,26 @@ export default function Whiteboard() {
   const activateTextTool = () => {
     setTool('text');
     if (!textInput) {
-      openTextInputAt(window.innerWidth / 2 - 80, window.innerHeight / 2 - 18);
+      openTextInputAt(window.innerWidth / 2 - 80, window.innerHeight / 2 - 18, '', null, { size: textSize });
     }
+  };
+
+  const applyTextSize = (nextSize) => {
+    const normalized = Math.max(12, Math.min(96, Number(nextSize) || 24));
+    setTextSize(normalized);
+    if (textInput) {
+      setTextInput(input => input ? { ...input, size: normalized } : input);
+      return;
+    }
+    const selectedText = [...stateRef.current.selected]
+      .map(id => stateRef.current.items.find(item => item.id === id))
+      .filter(item => item?.type === 'text');
+    if (selectedText.length === 0) return;
+    pushHistory();
+    for (const item of selectedText) item.size = normalized;
+    draw();
+    rerender();
+    setSelectionVersion(v => v + 1);
   };
 
   const createGraphNode = (x, y) => ({
@@ -978,6 +1042,8 @@ export default function Whiteboard() {
   const canGroup = selectedItems.length >= 2;
   const canUngroup = selectedItems.some(it => it.groupId);
   const canDelete = selectedItems.length > 0;
+  const hasSelectedText = selectedItems.some(it => it.type === 'text');
+  const showTextSizeControl = tool === 'text' || hasSelectedText || !!textInput;
   void selectionVersion;
 
   return (
@@ -1006,9 +1072,11 @@ export default function Whiteboard() {
           style={{
             left: textInput.screenX,
             top: textInput.screenY,
-            color,
-            fontSize: Math.max(18, size * 5) * st.view.scale + 'px',
+            color: textInput.color || color,
+            fontSize: (textInput.size || textSize) * st.view.scale + 'px',
             lineHeight: 1.3,
+            minWidth: textInput.minWidth,
+            minHeight: textInput.minHeight,
           }}
           value={textInput.value}
           onChange={(e) => setTextInput({ ...textInput, value: e.target.value })}
@@ -1086,6 +1154,33 @@ export default function Whiteboard() {
             style={{ '--p': ((size - 1) / 59 * 100) + '%' }}
             onChange={(e) => setSize(parseInt(e.target.value, 10))} />
         </div>
+        {showTextSizeControl && (
+          <>
+            <div className="divider" />
+            <div className="text-size-wrap">
+              <span className="text-size-label">T</span>
+              <input
+                className="text-size"
+                type="range"
+                min="12"
+                max="96"
+                value={textInput?.size || textSize}
+                style={{ '--p': (((textInput?.size || textSize) - 12) / 84 * 100) + '%' }}
+                onChange={(e) => applyTextSize(parseInt(e.target.value, 10))}
+                title="文字サイズ"
+              />
+              <input
+                className="text-size-number"
+                type="number"
+                min="12"
+                max="96"
+                value={textInput?.size || textSize}
+                onChange={(e) => applyTextSize(parseInt(e.target.value, 10))}
+                title="文字サイズ"
+              />
+            </div>
+          </>
+        )}
         <div className="divider" />
         <ToolBtn disabled={!canGroup} onClick={groupSelection} tooltip="グループ化 (Ctrl+G)">
           <Icon><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></Icon>
@@ -1330,6 +1425,10 @@ function isConnectable(item) {
 function currentEdgeLabel(edgeType, customLabel) {
   const label = edgeType === CUSTOM_EDGE_TYPE ? String(customLabel || '').trim() : edgeType;
   return label || '関連';
+}
+
+function textFont(size) {
+  return `400 ${size}px "Klee One", "Yomogi", "Yu Gothic UI", cursive`;
 }
 
 function speakerLabel(id) {

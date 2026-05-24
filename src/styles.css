@@ -325,6 +325,76 @@ input[type="range"].size::-moz-range-thumb {
   border: 2px solid var(--accent); cursor: pointer;
 }
 
+.text-size-wrap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 6px;
+}
+
+.text-size-label {
+  width: 18px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--handwriting);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+input[type="range"].text-size {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 88px;
+  height: 4px;
+  background: linear-gradient(90deg, var(--accent) var(--p, 0%), rgba(20,25,40,0.10) var(--p, 0%));
+  border-radius: 2px;
+  outline: none;
+}
+
+input[type="range"].text-size::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 2px 6px rgba(55, 96, 224, 0.4);
+}
+
+input[type="range"].text-size::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  border: 2px solid var(--accent);
+  cursor: pointer;
+}
+
+.text-size-number {
+  width: 46px;
+  height: 30px;
+  border: 1px solid rgba(20, 25, 40, 0.10);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  outline: none;
+}
+
+.text-size-number:focus {
+  border-color: rgba(55, 96, 224, 0.45);
+  box-shadow: 0 0 0 3px rgba(55, 96, 224, 0.12);
+}
+
 .edge-type-select {
   height: 32px;
   max-width: 112px;
