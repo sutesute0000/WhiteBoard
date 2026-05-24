@@ -482,6 +482,48 @@ input[type="range"].size::-moz-range-thumb {
   100% { opacity: 0; }
 }
 
+.speech-debug {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  max-width: min(520px, calc(100vw - 36px));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 10px;
+  z-index: 12;
+}
+
+.speech-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-mute);
+  flex: 0 0 auto;
+}
+
+.speech-dot.on {
+  background: #d94f4a;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.speech-debug-text {
+  min-width: 0;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
 /* ─── AI layer (world-transformed overlay for AI cards) ─────────────────────────────── */
 .ai-layer {
   position: absolute;

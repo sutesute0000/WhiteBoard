@@ -54,14 +54,17 @@ export default function Whiteboard() {
   const graphItems = useMemo(() => streamItems.filter(it => it.type === 'graph'), [streamItems]);
   const micSpeakerRef = useRef(micSpeakerId);
   micSpeakerRef.current = micSpeakerId;
-  const { listening, error: speechError, start: startSpeech, stop: stopSpeech } = useSpeech({
+  const { listening, error: speechError, lastText: speechLastText, start: startSpeech, stop: stopSpeech } = useSpeech({
     onUtterance: ({ text }) => postTeamsUtterance(micSpeakerRef.current, text),
   });
 
   const changeMicSpeaker = async (nextSpeakerId) => {
     if (nextSpeakerId === micSpeakerRef.current) return;
+    const wasListening = listening;
+    if (wasListening) await stopSpeech();
     await flushTranscript();
     setMicSpeakerId(nextSpeakerId);
+    if (wasListening) await startSpeech();
   };
 
   const toolRef = useRef(tool); toolRef.current = tool;
@@ -990,6 +993,13 @@ export default function Whiteboard() {
       </div>
 
       <div className="hint">矢印は種別を選んでから A で接続 · ノード/テキストを動かすと矢印も追従</div>
+      {(listening || speechError || speechLastText) && (
+        <div className="speech-debug">
+          <span className={`speech-dot ${listening ? 'on' : ''}`} />
+          <span>{micSpeakerId.replace('speaker-', 'Speaker ')}</span>
+          <span className="speech-debug-text">{speechError || speechLastText || 'listening...'}</span>
+        </div>
+      )}
       <div className="bottom-bar">
         <button className="tool" onClick={() => setZoomLevel(1/1.2)} data-tooltip="縮小"><Icon><line x1="5" y1="12" x2="19" y2="12"/></Icon></button>
         <div className="zoom-label">{Math.round(zoom * 100)}%</div>

@@ -32,7 +32,7 @@ export function createTurnBuffer({ onTurn }) {
     if (!current) return;
     const text = current.text.trim();
     if (text.length >= config.minTurnChars) {
-      onTurn({
+      const turn = {
         id: uid(),
         speaker: current.speaker,
         speakerId: current.speakerId || null,
@@ -41,7 +41,9 @@ export function createTurnBuffer({ onTurn }) {
         text,
         startedAt: current.startedAt,
         endedAt: Date.now(),
-      });
+      };
+      console.log('[turn.emit]', turn.speaker, turn.speakerId || '-', text.slice(0, 80));
+      onTurn(turn);
     }
     current = null;
   }

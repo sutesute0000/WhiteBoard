@@ -7,6 +7,8 @@ const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8787';
 export function useSpeech({ onUtterance }) {
   const [listening, setListening] = useState(false);
   const [error, setError] = useState(null);
+  const [lastText, setLastText] = useState('');
+  const [lastSentAt, setLastSentAt] = useState(null);
   const recognizerRef = useRef(null);
   const sdkRef = useRef(null);
 
@@ -33,6 +35,8 @@ export function useSpeech({ onUtterance }) {
 
       recognizer.recognized = (_s, e) => {
         if (e.result.reason === sdk.ResultReason.RecognizedSpeech && e.result.text) {
+          setLastText(e.result.text);
+          setLastSentAt(Date.now());
           onUtterance({ speaker: 'BrowserMic', text: e.result.text });
         }
       };
@@ -65,7 +69,7 @@ export function useSpeech({ onUtterance }) {
 
   useEffect(() => () => { if (recognizerRef.current) stop(); }, [stop]);
 
-  return { listening, error, start, stop };
+  return { listening, error, lastText, lastSentAt, start, stop };
 }
 
 // 取得した発言をバックエンドへ送る軽量ラッパ
@@ -83,13 +87,16 @@ export async function postUtterance(speaker, text) {
 
 export async function postTeamsUtterance(speakerId, text, meetingId = 'browser-teams-test') {
   try {
-    await fetch(`${SERVER_URL}/teams/transcript`, {
+    const r = await fetch(`${SERVER_URL}/teams/transcript`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ meetingId, speakerId, text, at: Date.now() }),
     });
+    if (!r.ok) console.warn('postTeamsUtterance failed status', r.status);
+    return r.ok;
   } catch (e) {
     console.warn('postTeamsUtterance failed', e);
+    return false;
   }
 }
 
