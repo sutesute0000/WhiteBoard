@@ -9,7 +9,7 @@ export function useBoardStream() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${SERVER_URL}/board`)
+    const loadSnapshot = () => fetch(`${SERVER_URL}/board`)
       .then(r => r.ok ? r.json() : null)
       .then((board) => {
         if (!board || cancelled) return;
@@ -17,6 +17,9 @@ export function useBoardStream() {
         setSummaries(board.summaries || {});
       })
       .catch(() => {});
+
+    loadSnapshot();
+    const poll = setInterval(loadSnapshot, 2500);
 
     const es = new EventSource(`${SERVER_URL}/events`);
     es.addEventListener('open', () => setConnected(true));
@@ -50,6 +53,7 @@ export function useBoardStream() {
 
     return () => {
       cancelled = true;
+      clearInterval(poll);
       es.close();
     };
   }, []);
