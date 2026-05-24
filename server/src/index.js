@@ -34,6 +34,27 @@ if (config.store === 'cosmos') {
 }
 const orch = createOrchestrator(store);
 const turnBuf = createTurnBuffer({ onTurn: (turn) => orch.enqueueTurn(turn) });
+const speakerAliases = new Map();
+
+function anonymousSpeaker(source, meetingId, speakerId) {
+  const key = `${source || 'external'}:${meetingId || 'default'}:${speakerId || 'unknown'}`;
+  if (!speakerAliases.has(key)) speakerAliases.set(key, `Speaker ${speakerAliases.size + 1}`);
+  return speakerAliases.get(key);
+}
+
+function normalizeTranscript(body = {}, source = 'manual') {
+  const text = String(body.text || '').trim();
+  const speakerId = body.speakerId != null ? String(body.speakerId).trim() : '';
+  const speaker = String(body.speaker || '').trim() || (speakerId ? anonymousSpeaker(source, body.meetingId, speakerId) : '');
+  return {
+    speaker,
+    speakerId: speakerId || null,
+    source,
+    meetingId: body.meetingId || null,
+    text,
+    at: body.at,
+  };
+}
 
 // ---- SSE: /events ----
 fastify.get('/events', async (req, reply) => {
@@ -68,10 +89,28 @@ fastify.get('/board', async () => store.getBoard());
 
 fastify.post('/transcript', async (req, reply) => {
   // body: {speaker:string, text:string, at?:number}
-  const { speaker, text, at } = req.body || {};
+  const { speaker, text, at } = normalizeTranscript(req.body, 'manual');
   if (!speaker || !text) return reply.code(400).send({ error: 'speaker and text required' });
   turnBuf.add({ speaker, text, at });
   return { ok: true, status: orch.status() };
+});
+
+fastify.post('/transcript/external', async (req, reply) => {
+  // body: {speakerId?:string, speaker?:string, text:string, meetingId?:string, at?:number}
+  // speakerId は実名ではなく、話者交代検出用の安定IDとして扱う。
+  const turn = normalizeTranscript(req.body, req.body?.source || 'external');
+  if (!turn.speaker || !turn.text) return reply.code(400).send({ error: 'speakerId or speaker, and text required' });
+  turnBuf.add(turn);
+  return { ok: true, speaker: turn.speaker, status: orch.status() };
+});
+
+fastify.post('/teams/transcript', async (req, reply) => {
+  // Teams audio ingestor / Teams media bot からの受け口。
+  // 実名特定は不要。speakerId の変化だけでターン境界を維持する。
+  const turn = normalizeTranscript(req.body, 'teams');
+  if (!turn.speaker || !turn.text) return reply.code(400).send({ error: 'speakerId or speaker, and text required' });
+  turnBuf.add(turn);
+  return { ok: true, speaker: turn.speaker, status: orch.status() };
 });
 
 fastify.post('/transcript/flush', async () => {

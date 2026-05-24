@@ -11,7 +11,7 @@ import { config } from './config.js';
 function uid() { return 't-' + Math.random().toString(36).slice(2, 10); }
 
 export function createTurnBuffer({ onTurn }) {
-  let current = null; // { speaker, text, startedAt }
+  let current = null; // { speaker, speakerId?, source?, meetingId?, text, startedAt }
 
   function emit() {
     if (!current) return;
@@ -20,6 +20,9 @@ export function createTurnBuffer({ onTurn }) {
       onTurn({
         id: uid(),
         speaker: current.speaker,
+        speakerId: current.speakerId || null,
+        source: current.source || 'manual',
+        meetingId: current.meetingId || null,
         text,
         startedAt: current.startedAt,
         endedAt: Date.now(),
@@ -28,12 +31,12 @@ export function createTurnBuffer({ onTurn }) {
     current = null;
   }
 
-  function add({ speaker, text, at = Date.now() }) {
+  function add({ speaker, speakerId, source = 'manual', meetingId = null, text, at = Date.now() }) {
     const clean = (text || '').trim();
     if (!clean) return;
 
     if (!current) {
-      current = { speaker, text: clean, startedAt: at };
+      current = { speaker, speakerId, source, meetingId, text: clean, startedAt: at };
       return;
     }
     if (current.speaker === speaker) {
@@ -48,7 +51,7 @@ export function createTurnBuffer({ onTurn }) {
     }
     // 話者交代を確定
     emit();
-    current = { speaker, text: clean, startedAt: at };
+    current = { speaker, speakerId, source, meetingId, text: clean, startedAt: at };
   }
 
   function flush() { emit(); }
