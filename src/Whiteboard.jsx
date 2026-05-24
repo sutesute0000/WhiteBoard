@@ -13,6 +13,7 @@ const NODE_COLORS = {
   result: '#fff0d7',
   issue: '#ffe9ef',
 };
+const EDGE_TYPES = ['理由', '結果', '比較・対立', '前提', '具体化', '例', 'リスク', '提案', '結論', '範囲', '範囲外', '時系列'];
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 const Icon = ({ children }) => (
@@ -42,6 +43,7 @@ export default function Whiteboard() {
   const [color, setColor] = useState('#2b2d33');
   const [size, setSize] = useState(3);
   const [zoom, setZoom] = useState(1);
+  const [edgeType, setEdgeType] = useState('理由');
   const [textInput, setTextInput] = useState(null);
   const [selectionVersion, setSelectionVersion] = useState(0);
   const [, force] = useState(0);
@@ -56,6 +58,7 @@ export default function Whiteboard() {
   const toolRef = useRef(tool); toolRef.current = tool;
   const colorRef = useRef(color); colorRef.current = color;
   const sizeRef = useRef(size); sizeRef.current = size;
+  const edgeTypeRef = useRef(edgeType); edgeTypeRef.current = edgeType;
 
   const worldFromScreen = (sx, sy) => {
     const v = stateRef.current.view;
@@ -484,7 +487,7 @@ export default function Whiteboard() {
             graphId: 'user',
             from: st.edgeDraft.from,
             to: hit.id,
-            label: '',
+            label: edgeTypeRef.current,
             layout: Math.abs(nodeCenter(findItem(st.edgeDraft.from)).x - nodeCenter(hit).x) >= Math.abs(nodeCenter(findItem(st.edgeDraft.from)).y - nodeCenter(hit).y) ? 'LR' : 'TD',
           });
           st.selected = new Set();
@@ -894,6 +897,14 @@ export default function Whiteboard() {
         <ToolBtn active={tool === 'edge'} onClick={() => setTool('edge')} tooltip="矢印追加: ノード/テキスト (A)">
           <Icon><path d="M5 12h13"/><path d="M14 7l5 5-5 5"/><circle cx="5" cy="12" r="2"/></Icon>
         </ToolBtn>
+        <select
+          className="edge-type-select"
+          value={edgeType}
+          onChange={(e) => setEdgeType(e.target.value)}
+          title="矢印の意味"
+        >
+          {EDGE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+        </select>
         <ToolBtn active={tool === 'hand'} onClick={() => setTool('hand')} tooltip="移動 (H / Space)">
           <Icon><path d="M9 11V6a2 2 0 114 0v6"/><path d="M9 11V4a2 2 0 114 0v7"/><path d="M13 11V3a2 2 0 114 0v8"/><path d="M17 11a2 2 0 114 0v5a7 7 0 01-7 7h-2a7 7 0 01-7-7v-4a2 2 0 114 0"/></Icon>
         </ToolBtn>
@@ -954,7 +965,7 @@ export default function Whiteboard() {
         </button>
       </div>
 
-      <div className="hint">Nでノード追加 · Aでノード/テキストを順にクリックして矢印追加 · ダブルクリックで文言編集</div>
+      <div className="hint">矢印は種別を選んでから A で接続 · ノード/テキストを動かすと矢印も追従</div>
       <div className="bottom-bar">
         <button className="tool" onClick={() => setZoomLevel(1/1.2)} data-tooltip="縮小"><Icon><line x1="5" y1="12" x2="19" y2="12"/></Icon></button>
         <div className="zoom-label">{Math.round(zoom * 100)}%</div>
