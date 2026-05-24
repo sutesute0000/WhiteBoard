@@ -176,8 +176,11 @@ export default function Whiteboard() {
     ctx.setTransform(dpr * v.scale, 0, 0, dpr * v.scale, dpr * v.x * v.scale, dpr * v.y * v.scale);
 
     drawGrid(ctx, w, h, v);
-    for (const it of stateRef.current.items) drawItem(ctx, it);
-    if (stateRef.current.drawing) drawItem(ctx, stateRef.current.drawing);
+    drawStrokeLayer(ctx, canvas, dpr, v);
+    for (const it of stateRef.current.items) {
+      if (it.type !== 'stroke') drawItem(ctx, it);
+    }
+    if (stateRef.current.drawing && stateRef.current.drawing.type !== 'stroke') drawItem(ctx, stateRef.current.drawing);
     if (stateRef.current.edgeDraft) drawEdgeDraft(ctx, stateRef.current.edgeDraft);
     drawSelection(ctx, v);
     if (stateRef.current.marquee) drawMarquee(ctx, v);
@@ -290,41 +293,57 @@ export default function Whiteboard() {
     }
   }
 
+  function drawStrokeLayer(ctx, canvas, dpr, v) {
+    const layer = document.createElement('canvas');
+    layer.width = canvas.width;
+    layer.height = canvas.height;
+    const layerCtx = layer.getContext('2d');
+    layerCtx.setTransform(dpr * v.scale, 0, 0, dpr * v.scale, dpr * v.x * v.scale, dpr * v.y * v.scale);
+    for (const it of stateRef.current.items) {
+      if (it.type === 'stroke') drawStroke(layerCtx, it);
+    }
+    if (stateRef.current.drawing?.type === 'stroke') drawStroke(layerCtx, stateRef.current.drawing);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(layer, 0, 0);
+    ctx.setTransform(dpr * v.scale, 0, 0, dpr * v.scale, dpr * v.x * v.scale, dpr * v.y * v.scale);
+  }
+
   function drawItem(ctx, it) {
     if (it.type === 'graphEdge') return drawGraphEdge(ctx, it);
     if (it.type === 'graphNode') return drawGraphNode(ctx, it);
     if (it.type === 'graphTitle') return drawGraphTitle(ctx, it);
-    if (it.type === 'stroke') {
-      ctx.strokeStyle = it.color;
-      ctx.fillStyle = it.color;
-      ctx.lineWidth = it.size;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.globalCompositeOperation = it.erase ? 'destination-out' : 'source-over';
-      const pts = it.points;
-      ctx.beginPath();
-      if (pts.length === 1) {
-        ctx.arc(pts[0].x, pts[0].y, it.size / 2, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        ctx.moveTo(pts[0].x, pts[0].y);
-        for (let i = 1; i < pts.length - 1; i++) {
-          const mx = (pts[i].x + pts[i + 1].x) / 2;
-          const my = (pts[i].y + pts[i + 1].y) / 2;
-          ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
-        }
-        ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-        ctx.stroke();
-      }
-      ctx.globalCompositeOperation = 'source-over';
-      return;
-    }
+    if (it.type === 'stroke') return drawStroke(ctx, it);
     if (it.type === 'text') {
       ctx.fillStyle = it.color;
       ctx.font = textFont(it.size);
       ctx.textBaseline = 'top';
       it.text.split('\n').forEach((line, i) => ctx.fillText(line, it.x, it.y + i * it.size * 1.3));
     }
+  }
+
+  function drawStroke(ctx, it) {
+    ctx.strokeStyle = it.color;
+    ctx.fillStyle = it.color;
+    ctx.lineWidth = it.size;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.globalCompositeOperation = it.erase ? 'destination-out' : 'source-over';
+    const pts = it.points;
+    ctx.beginPath();
+    if (pts.length === 1) {
+      ctx.arc(pts[0].x, pts[0].y, it.size / 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length - 1; i++) {
+        const mx = (pts[i].x + pts[i + 1].x) / 2;
+        const my = (pts[i].y + pts[i + 1].y) / 2;
+        ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+      }
+      ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   function drawGraphNode(ctx, it) {
