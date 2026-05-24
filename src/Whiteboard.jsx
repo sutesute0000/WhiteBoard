@@ -906,7 +906,7 @@ export default function Whiteboard() {
           {EDGE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
         </select>
         <ToolBtn active={tool === 'hand'} onClick={() => setTool('hand')} tooltip="移動 (H / Space)">
-          <Icon><path d="M9 11V6a2 2 0 114 0v6"/><path d="M9 11V4a2 2 0 114 0v7"/><path d="M13 11V3a2 2 0 114 0v8"/><path d="M17 11a2 2 0 114 0v5a7 7 0 01-7 7h-2a7 7 0 01-7-7v-4a2 2 0 114 0"/></Icon>
+          <Icon><path d="M18 11.5V10a2 2 0 00-4 0v1.5"/><path d="M14 10V8a2 2 0 00-4 0v5"/><path d="M10 8.5V7a2 2 0 00-4 0v8"/><path d="M6 13.5l-1.2-1.2a2 2 0 00-2.8 2.8l4.2 4.2A6 6 0 0010.5 21H14a6 6 0 006-6v-3.5a2 2 0 00-4 0V13"/></Icon>
         </ToolBtn>
 
         <div className="divider" />
