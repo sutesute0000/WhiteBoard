@@ -464,7 +464,7 @@ export default function Whiteboard() {
 
       if (toolRef.current === 'edge') {
         const hit = hitTest(wp.x, wp.y);
-        if (!hit || hit.type !== 'graphNode') {
+        if (!hit || !isConnectable(hit)) {
           st.edgeDraft = null;
           draw();
           return;
@@ -891,7 +891,7 @@ export default function Whiteboard() {
         <ToolBtn active={tool === 'node'} onClick={() => setTool('node')} tooltip="ノード追加 (N)">
           <Icon><rect x="4" y="5" width="16" height="12" rx="3"/><path d="M12 9v4M10 11h4"/></Icon>
         </ToolBtn>
-        <ToolBtn active={tool === 'edge'} onClick={() => setTool('edge')} tooltip="矢印追加 (A)">
+        <ToolBtn active={tool === 'edge'} onClick={() => setTool('edge')} tooltip="矢印追加: ノード/テキスト (A)">
           <Icon><path d="M5 12h13"/><path d="M14 7l5 5-5 5"/><circle cx="5" cy="12" r="2"/></Icon>
         </ToolBtn>
         <ToolBtn active={tool === 'hand'} onClick={() => setTool('hand')} tooltip="移動 (H / Space)">
@@ -954,7 +954,7 @@ export default function Whiteboard() {
         </button>
       </div>
 
-      <div className="hint">Nでノード追加 · Aでノード同士をクリックして矢印追加 · ダブルクリックで文言編集</div>
+      <div className="hint">Nでノード追加 · Aでノード/テキストを順にクリックして矢印追加 · ダブルクリックで文言編集</div>
       <div className="bottom-bar">
         <button className="tool" onClick={() => setZoomLevel(1/1.2)} data-tooltip="縮小"><Icon><line x1="5" y1="12" x2="19" y2="12"/></Icon></button>
         <div className="zoom-label">{Math.round(zoom * 100)}%</div>
@@ -1082,15 +1082,55 @@ function firstNodeIndex(items) {
   return index < 0 ? items.length : index;
 }
 
+function isConnectable(item) {
+  return item?.type === 'graphNode' || item?.type === 'text';
+}
+
 function nodeCenter(node) {
+  if (node.type === 'text') {
+    const b = textBounds(node);
+    return { x: b.minX + (b.maxX - b.minX) / 2, y: b.minY + (b.maxY - b.minY) / 2 };
+  }
   return { x: node.x + node.w / 2, y: node.y + node.h / 2 };
 }
 
 function pointOnRect(node, dx, dy) {
-  const cx = node.x + node.w / 2;
-  const cy = node.y + node.h / 2;
-  const scale = Math.min(Math.abs((node.w / 2) / (dx || 0.0001)), Math.abs((node.h / 2) / (dy || 0.0001)));
+  if (node.type === 'text') {
+    const b = textBounds(node);
+    return pointOnBounds(b, dx, dy);
+  }
+  return pointOnBounds({
+    minX: node.x,
+    minY: node.y,
+    maxX: node.x + node.w,
+    maxY: node.y + node.h,
+  }, dx, dy);
+}
+
+function pointOnBounds(bounds, dx, dy) {
+  const w = bounds.maxX - bounds.minX;
+  const h = bounds.maxY - bounds.minY;
+  const cx = bounds.minX + w / 2;
+  const cy = bounds.minY + h / 2;
+  const scale = Math.min(Math.abs((w / 2) / (dx || 0.0001)), Math.abs((h / 2) / (dy || 0.0001)));
   return { x: cx + dx * scale, y: cy + dy * scale };
+}
+
+function textBounds(item) {
+  const lines = String(item.text || '').split('\n');
+  const width = Math.max(...lines.map(line => approximateTextWidth(line, item.size)), 1);
+  return {
+    minX: item.x,
+    minY: item.y,
+    maxX: item.x + width,
+    maxY: item.y + lines.length * item.size * 1.3,
+  };
+}
+
+function approximateTextWidth(text, size) {
+  let units = 0;
+  for (const ch of String(text || '')) units += /[ -~]/.test(ch) ? 0.58 : 1;
+  return units * size;
 }
 
 function drawArrow(ctx, control, end, seed) {
