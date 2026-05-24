@@ -1,5 +1,5 @@
-// Azure AI Speech: ブラウザの ConversationTranscriber を用いた
-// 話者分離付きリアルタイム文字起こし。トークンはバックエンドから取得。
+// Azure AI Speech: ブラウザのマイク入力を連続認識する。
+// 話者分離は Teams ingestor 側で扱い、ブラウザマイクは単一入力として扱う。
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8787';
@@ -7,7 +7,7 @@ const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8787';
 export function useSpeech({ onUtterance }) {
   const [listening, setListening] = useState(false);
   const [error, setError] = useState(null);
-  const transcriberRef = useRef(null);
+  const recognizerRef = useRef(null);
   const sdkRef = useRef(null);
 
   // SDK は重いので動的 import
@@ -27,32 +27,26 @@ export function useSpeech({ onUtterance }) {
 
       const speechConfig = sdk.SpeechConfig.fromAuthorizationToken(token, region);
       speechConfig.speechRecognitionLanguage = 'ja-JP';
-      // 話者分離を有効化
-      speechConfig.setProperty(
-        sdk.PropertyId.SpeechServiceConnection_TranslationFeatures,
-        'speakerIdentification'
-      );
 
       const audioConfig = sdk.AudioConfig.fromDefaultMicrophoneInput();
-      const transcriber = new sdk.ConversationTranscriber(speechConfig, audioConfig);
+      const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
 
-      transcriber.transcribed = (_s, e) => {
+      recognizer.recognized = (_s, e) => {
         if (e.result.reason === sdk.ResultReason.RecognizedSpeech && e.result.text) {
-          const speakerId = e.result.speakerId || 'Speaker';
-          onUtterance({ speaker: 'Speaker_' + speakerId, text: e.result.text });
+          onUtterance({ speaker: 'BrowserMic', text: e.result.text });
         }
       };
-      transcriber.canceled = (_s, e) => {
+      recognizer.canceled = (_s, e) => {
         console.warn('[speech] canceled', e.errorDetails);
         setError(e.errorDetails || 'canceled');
         setListening(false);
       };
-      transcriber.sessionStopped = () => setListening(false);
+      recognizer.sessionStopped = () => setListening(false);
 
       await new Promise((res, rej) =>
-        transcriber.startTranscribingAsync(res, rej)
+        recognizer.startContinuousRecognitionAsync(res, rej)
       );
-      transcriberRef.current = transcriber;
+      recognizerRef.current = recognizer;
       setListening(true);
     } catch (e) {
       console.error('[speech] start failed', e);
@@ -61,15 +55,15 @@ export function useSpeech({ onUtterance }) {
   }, [onUtterance]);
 
   const stop = useCallback(async () => {
-    const t = transcriberRef.current;
-    if (!t) return;
-    await new Promise((res) => t.stopTranscribingAsync(res, res));
-    try { t.close(); } catch {}
-    transcriberRef.current = null;
+    const recognizer = recognizerRef.current;
+    if (!recognizer) return;
+    await new Promise((res) => recognizer.stopContinuousRecognitionAsync(res, res));
+    try { recognizer.close(); } catch {}
+    recognizerRef.current = null;
     setListening(false);
   }, []);
 
-  useEffect(() => () => { if (transcriberRef.current) stop(); }, [stop]);
+  useEffect(() => () => { if (recognizerRef.current) stop(); }, [stop]);
 
   return { listening, error, start, stop };
 }
