@@ -33,6 +33,7 @@ export default function Whiteboard() {
     panning: null,
     dragging: null,
     marquee: null,
+    edgeDraft: null,
     spaceDown: false,
     selected: new Set(),
   });
@@ -87,6 +88,7 @@ export default function Whiteboard() {
     drawGrid(ctx, w, h, v);
     for (const it of stateRef.current.items) drawItem(ctx, it);
     if (stateRef.current.drawing) drawItem(ctx, stateRef.current.drawing);
+    if (stateRef.current.edgeDraft) drawEdgeDraft(ctx, stateRef.current.edgeDraft);
     drawSelection(ctx, v);
     if (stateRef.current.marquee) drawMarquee(ctx, v);
   }, []);
@@ -234,6 +236,27 @@ export default function Whiteboard() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, x, y);
+  }
+
+  function drawEdgeDraft(ctx, draft) {
+    const from = findItem(draft.from);
+    if (!from) return;
+    const a = nodeCenter(from);
+    const end = draft.to;
+    const start = pointOnRect(from, end.x - a.x, end.y - a.y);
+    const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    ctx.save();
+    ctx.strokeStyle = 'rgba(36,38,45,0.58)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([7, 6]);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.quadraticCurveTo(mid.x + jitter(draft.from, 30, 10), mid.y + jitter(draft.from, 31, 10), end.x, end.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    drawArrow(ctx, mid, end, draft.from + '-draft');
+    ctx.restore();
   }
 
   function drawSelection(ctx, v) {
@@ -399,6 +422,59 @@ export default function Whiteboard() {
         return;
       }
 
+      if (toolRef.current === 'node') {
+        const node = createGraphNode(wp.x, wp.y);
+        pushHistory();
+        st.items.push(node);
+        st.selected = new Set([node.id]);
+        setSelectionVersion(v => v + 1);
+        draw();
+        rerender();
+        setTextInput({
+          screenX: e.clientX,
+          screenY: e.clientY,
+          worldX: node.x + 14,
+          worldY: node.y + 14,
+          value: node.label,
+          editingId: node.id,
+        });
+        return;
+      }
+
+      if (toolRef.current === 'edge') {
+        const hit = hitTest(wp.x, wp.y);
+        if (!hit || hit.type !== 'graphNode') {
+          st.edgeDraft = null;
+          draw();
+          return;
+        }
+        if (!st.edgeDraft) {
+          st.edgeDraft = { from: hit.id, to: wp };
+          st.selected = new Set([hit.id]);
+          setSelectionVersion(v => v + 1);
+          draw();
+          return;
+        }
+        if (st.edgeDraft.from !== hit.id) {
+          pushHistory();
+          st.items.splice(firstNodeIndex(st.items), 0, {
+            id: `user-edge-${uid()}`,
+            type: 'graphEdge',
+            graphId: 'user',
+            from: st.edgeDraft.from,
+            to: hit.id,
+            label: '',
+            layout: Math.abs(nodeCenter(findItem(st.edgeDraft.from)).x - nodeCenter(hit).x) >= Math.abs(nodeCenter(findItem(st.edgeDraft.from)).y - nodeCenter(hit).y) ? 'LR' : 'TD',
+          });
+          st.selected = new Set();
+          st.edgeDraft = null;
+          draw();
+          rerender();
+          setSelectionVersion(v => v + 1);
+        }
+        return;
+      }
+
       if (toolRef.current === 'select') {
         const hit = hitTest(wp.x, wp.y);
         if (hit) {
@@ -410,6 +486,10 @@ export default function Whiteboard() {
           }
           st.selected = expandToGroup(sel);
           const movable = [...st.selected].map(id => st.items.find(x => x.id === id)).filter(Boolean).filter(it => it.type !== 'graphEdge');
+          if (movable.length === 0) {
+            draw();
+            return;
+          }
           const startPos = new Map();
           for (const it of movable) {
             startPos.set(it.id, it.type === 'stroke' ? it.points.map(p => ({ ...p })) : { x: it.x, y: it.y });
@@ -464,6 +544,11 @@ export default function Whiteboard() {
       if (st.marquee) {
         st.marquee.x1 = wp.x;
         st.marquee.y1 = wp.y;
+        draw();
+        return;
+      }
+      if (st.edgeDraft) {
+        st.edgeDraft.to = wp;
         draw();
         return;
       }
@@ -571,6 +656,8 @@ export default function Whiteboard() {
       else if (e.key.toLowerCase() === 'p') setTool('pen');
       else if (e.key.toLowerCase() === 'e') setTool('eraser');
       else if (e.key.toLowerCase() === 't') setTool('text');
+      else if (e.key.toLowerCase() === 'n') setTool('node');
+      else if (e.key.toLowerCase() === 'a') setTool('edge');
       else if (e.key.toLowerCase() === 'h') setTool('hand');
       else if (e.key === '[') setSize(s => Math.max(1, s - 1));
       else if (e.key === ']') setSize(s => Math.min(60, s + 1));
@@ -592,7 +679,9 @@ export default function Whiteboard() {
 
   useEffect(() => {
     if (canvasRef.current) canvasRef.current.style.cursor = cursorFor(tool, stateRef.current.spaceDown);
-  }, [tool]);
+    stateRef.current.edgeDraft = null;
+    draw();
+  }, [tool, draw]);
 
   const doUndo = () => {
     const st = stateRef.current;
@@ -703,6 +792,20 @@ export default function Whiteboard() {
     setTextInput(null);
   };
 
+  const createGraphNode = (x, y) => ({
+    id: `user-node-${uid()}`,
+    type: 'graphNode',
+    graphId: 'user',
+    x: x - 78,
+    y: y - 37,
+    w: 156,
+    h: 74,
+    label: '新しいノード',
+    kind: 'claim',
+    fill: NODE_COLORS.claim,
+    fontSize: 17,
+  });
+
   const st = stateRef.current;
   const selectedItems = [...st.selected].map(id => st.items.find(x => x.id === id)).filter(Boolean);
   const canGroup = selectedItems.length >= 2;
@@ -754,6 +857,12 @@ export default function Whiteboard() {
         </ToolBtn>
         <ToolBtn active={tool === 'text'} onClick={() => setTool('text')} tooltip="テキスト (T)">
           <Icon><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></Icon>
+        </ToolBtn>
+        <ToolBtn active={tool === 'node'} onClick={() => setTool('node')} tooltip="ノード追加 (N)">
+          <Icon><rect x="4" y="5" width="16" height="12" rx="3"/><path d="M12 9v4M10 11h4"/></Icon>
+        </ToolBtn>
+        <ToolBtn active={tool === 'edge'} onClick={() => setTool('edge')} tooltip="矢印追加 (A)">
+          <Icon><path d="M5 12h13"/><path d="M14 7l5 5-5 5"/><circle cx="5" cy="12" r="2"/></Icon>
         </ToolBtn>
         <ToolBtn active={tool === 'hand'} onClick={() => setTool('hand')} tooltip="移動 (H / Space)">
           <Icon><path d="M9 11V6a2 2 0 114 0v6"/><path d="M9 11V4a2 2 0 114 0v7"/><path d="M13 11V3a2 2 0 114 0v8"/><path d="M17 11a2 2 0 114 0v5a7 7 0 01-7 7h-2a7 7 0 01-7-7v-4a2 2 0 114 0"/></Icon>
@@ -815,7 +924,7 @@ export default function Whiteboard() {
         </button>
       </div>
 
-      <div className="hint">図のノード/エッジは選択して移動 · ダブルクリックで文言編集 · Spaceドラッグで移動</div>
+      <div className="hint">Nでノード追加 · Aでノード同士をクリックして矢印追加 · ダブルクリックで文言編集</div>
       <div className="bottom-bar">
         <button className="tool" onClick={() => setZoomLevel(1/1.2)} data-tooltip="縮小"><Icon><line x1="5" y1="12" x2="19" y2="12"/></Icon></button>
         <div className="zoom-label">{Math.round(zoom * 100)}%</div>
@@ -931,9 +1040,16 @@ function ToolBtn({ active, disabled, onClick, tooltip, children }) {
 function cursorFor(tool, spaceDown) {
   if (spaceDown || tool === 'hand') return 'grab';
   if (tool === 'text') return 'text';
+  if (tool === 'node') return 'copy';
+  if (tool === 'edge') return 'crosshair';
   if (tool === 'eraser') return 'cell';
   if (tool === 'select') return 'default';
   return 'crosshair';
+}
+
+function firstNodeIndex(items) {
+  const index = items.findIndex(it => it.type === 'graphNode' || it.type === 'text' || it.type === 'stroke');
+  return index < 0 ? items.length : index;
 }
 
 function nodeCenter(node) {

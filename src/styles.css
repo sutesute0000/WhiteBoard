@@ -395,6 +395,9 @@ input[type="range"].size::-moz-range-thumb {
 /* ─── Text input overlay ─────────────────────────────── */
 .text-input {
   position: absolute;
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
   background: rgba(255,255,255,0.85);
   border: 1.5px dashed var(--accent);
   outline: none;
@@ -403,6 +406,7 @@ input[type="range"].size::-moz-range-thumb {
   font-family: var(--handwriting);
   font-weight: 400;
   min-width: 100px;
+  min-height: 38px;
   resize: none;
   overflow: hidden;
   white-space: pre;
