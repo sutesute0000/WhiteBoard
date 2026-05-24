@@ -62,6 +62,18 @@ export default function Whiteboard() {
     return { x: sx / v.scale - v.x, y: sy / v.scale - v.y };
   };
 
+  const openTextInputAt = useCallback((screenX, screenY, value = '', editingId = null) => {
+    const wp = worldFromScreen(screenX, screenY);
+    setTextInput({
+      screenX,
+      screenY,
+      worldX: wp.x,
+      worldY: wp.y,
+      value,
+      editingId,
+    });
+  }, []);
+
   const snapshot = () => JSON.parse(JSON.stringify(stateRef.current.items));
   const pushHistory = () => {
     const st = stateRef.current;
@@ -107,6 +119,15 @@ export default function Whiteboard() {
     draw();
     rerender();
   }, [graphItems, draw, rerender]);
+
+  useEffect(() => {
+    if (!textInput || !textareaRef.current) return;
+    const id = window.setTimeout(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [textInput?.editingId, textInput?.screenX, textInput?.screenY]);
 
   function drawGrid(ctx, w, h, v) {
     const spacing = 40;
@@ -410,7 +431,7 @@ export default function Whiteboard() {
       const isPan = toolRef.current === 'hand' || e.button === 1 || st.spaceDown;
 
       if (toolRef.current === 'text' && !isPan) {
-        setTextInput({ screenX: e.clientX, screenY: e.clientY, worldX: wp.x, worldY: wp.y, value: '' });
+        openTextInputAt(e.clientX, e.clientY);
         return;
       }
 
@@ -655,7 +676,7 @@ export default function Whiteboard() {
       if (e.key.toLowerCase() === 'v') setTool('select');
       else if (e.key.toLowerCase() === 'p') setTool('pen');
       else if (e.key.toLowerCase() === 'e') setTool('eraser');
-      else if (e.key.toLowerCase() === 't') setTool('text');
+      else if (e.key.toLowerCase() === 't') activateTextTool();
       else if (e.key.toLowerCase() === 'n') setTool('node');
       else if (e.key.toLowerCase() === 'a') setTool('edge');
       else if (e.key.toLowerCase() === 'h') setTool('hand');
@@ -792,6 +813,13 @@ export default function Whiteboard() {
     setTextInput(null);
   };
 
+  const activateTextTool = () => {
+    setTool('text');
+    if (!textInput) {
+      openTextInputAt(window.innerWidth / 2 - 80, window.innerHeight / 2 - 18);
+    }
+  };
+
   const createGraphNode = (x, y) => ({
     id: `user-node-${uid()}`,
     type: 'graphNode',
@@ -824,7 +852,7 @@ export default function Whiteboard() {
 
       {textInput && (
         <textarea
-          ref={(el) => { textareaRef.current = el; if (el) setTimeout(() => el.focus(), 0); }}
+          ref={(el) => { textareaRef.current = el; }}
           autoFocus
           className="text-input"
           style={{
@@ -836,6 +864,8 @@ export default function Whiteboard() {
           }}
           value={textInput.value}
           onChange={(e) => setTextInput({ ...textInput, value: e.target.value })}
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitText(); }
             else if (e.key === 'Escape') { e.preventDefault(); setTextInput(null); }
@@ -855,7 +885,7 @@ export default function Whiteboard() {
         <ToolBtn active={tool === 'eraser'} onClick={() => setTool('eraser')} tooltip="消しゴム (E)">
           <Icon><path d="M20 20H7L3 16a2 2 0 010-2.83l10-10a2 2 0 012.83 0l5.66 5.66a2 2 0 010 2.83L11.41 20"/><path d="M18 13l-6-6"/></Icon>
         </ToolBtn>
-        <ToolBtn active={tool === 'text'} onClick={() => setTool('text')} tooltip="テキスト (T)">
+        <ToolBtn active={tool === 'text'} onClick={activateTextTool} tooltip="テキスト (T)">
           <Icon><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></Icon>
         </ToolBtn>
         <ToolBtn active={tool === 'node'} onClick={() => setTool('node')} tooltip="ノード追加 (N)">
