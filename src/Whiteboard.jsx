@@ -907,10 +907,10 @@ export default function Whiteboard() {
         </select>
         <ToolBtn active={tool === 'hand'} onClick={() => setTool('hand')} tooltip="移動 (H / Space)">
           <Icon>
-            <path d="M7 11V8.5a2 2 0 014 0V11"/>
-            <path d="M11 11V7.5a2 2 0 014 0V11"/>
-            <path d="M15 11V9a2 2 0 014 0v4.8A7.2 7.2 0 0111.8 21H11a7 7 0 01-7-7v-1.5a2 2 0 014 0V14"/>
-            <path d="M8 12h8.5a2.5 2.5 0 010 5H9.5"/>
+            <path d="M18 11V6a2 2 0 00-4 0v4"/>
+            <path d="M14 10V4a2 2 0 00-4 0v6"/>
+            <path d="M10 10.5V6a2 2 0 00-4 0v8"/>
+            <path d="M18 8a2 2 0 114 0v6a8 8 0 01-8 8h-2c-2.8 0-4.5-.86-6-2.34l-3.6-3.6a2 2 0 112.83-2.82L7 15"/>
           </Icon>
         </ToolBtn>
 
