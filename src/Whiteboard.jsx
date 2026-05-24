@@ -14,6 +14,7 @@ const NODE_COLORS = {
   issue: '#ffe9ef',
 };
 const EDGE_TYPES = ['理由', '結果', '比較・対立', '前提', '具体化', '例', 'リスク', '提案', '結論', '範囲', '範囲外', '時系列'];
+const CUSTOM_EDGE_TYPE = '__custom__';
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8787';
 const TEST_SPEAKERS = [
   ['sales-a', '営業担当A'],
@@ -54,6 +55,7 @@ export default function Whiteboard() {
   const [size, setSize] = useState(3);
   const [zoom, setZoom] = useState(1);
   const [edgeType, setEdgeType] = useState('理由');
+  const [customEdgeLabel, setCustomEdgeLabel] = useState('');
   const [micSpeakerId, setMicSpeakerId] = useState('sales-a');
   const [boards, setBoards] = useState([]);
   const [boardId, setBoardId] = useState(() => localStorage.getItem('whiteboard.boardId') || 'default');
@@ -120,6 +122,7 @@ export default function Whiteboard() {
   const colorRef = useRef(color); colorRef.current = color;
   const sizeRef = useRef(size); sizeRef.current = size;
   const edgeTypeRef = useRef(edgeType); edgeTypeRef.current = edgeType;
+  const customEdgeLabelRef = useRef(customEdgeLabel); customEdgeLabelRef.current = customEdgeLabel;
 
   const worldFromScreen = (sx, sy) => {
     const v = stateRef.current.view;
@@ -602,7 +605,7 @@ export default function Whiteboard() {
             graphId: 'user',
             from: st.edgeDraft.from,
             to: hit.id,
-            label: edgeTypeRef.current,
+            label: currentEdgeLabel(edgeTypeRef.current, customEdgeLabelRef.current),
             layout: Math.abs(nodeCenter(findItem(st.edgeDraft.from)).x - nodeCenter(hit).x) >= Math.abs(nodeCenter(findItem(st.edgeDraft.from)).y - nodeCenter(hit).y) ? 'LR' : 'TD',
           });
           st.selected = new Set();
@@ -1046,7 +1049,17 @@ export default function Whiteboard() {
           title="矢印の意味"
         >
           {EDGE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+          <option value={CUSTOM_EDGE_TYPE}>自由記述</option>
         </select>
+        {edgeType === CUSTOM_EDGE_TYPE && (
+          <input
+            className="edge-label-input"
+            value={customEdgeLabel}
+            onChange={(e) => setCustomEdgeLabel(e.target.value)}
+            placeholder="関係ラベル"
+            title="自由記述の矢印ラベル"
+          />
+        )}
         <ToolBtn active={tool === 'hand'} onClick={() => setTool('hand')} tooltip="移動 (H / Space)">
           <Icon>
             <path d="M18 11V6a2 2 0 00-4 0v4"/>
@@ -1312,6 +1325,11 @@ function firstNodeIndex(items) {
 
 function isConnectable(item) {
   return item?.type === 'graphNode' || item?.type === 'text';
+}
+
+function currentEdgeLabel(edgeType, customLabel) {
+  const label = edgeType === CUSTOM_EDGE_TYPE ? String(customLabel || '').trim() : edgeType;
+  return label || '関連';
 }
 
 function speakerLabel(id) {
