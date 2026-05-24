@@ -122,6 +122,16 @@ export default function Whiteboard() {
 
   useEffect(() => {
     const unseen = graphItems.filter(item => !ingestedGraphIdsRef.current.has(item.id));
+    const liveGraphIds = new Set(graphItems.map(item => item.id));
+    const staleGraphIds = [...ingestedGraphIdsRef.current].filter(id => !liveGraphIds.has(id));
+    if (staleGraphIds.length) {
+      const stale = new Set(staleGraphIds);
+      stateRef.current.items = stateRef.current.items.filter(item => !stale.has(item.graphId));
+      for (const id of staleGraphIds) ingestedGraphIdsRef.current.delete(id);
+      stateRef.current.selected = new Set([...stateRef.current.selected].filter(id => stateRef.current.items.some(item => item.id === id)));
+      draw();
+      rerender();
+    }
     if (unseen.length === 0) return;
     pushHistory();
     const st = stateRef.current;

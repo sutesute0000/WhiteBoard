@@ -109,6 +109,7 @@ fastify.post('/teams/transcript', async (req, reply) => {
   // 実名特定は不要。speakerId の変化だけでターン境界を維持する。
   const turn = normalizeTranscript(req.body, 'teams');
   if (!turn.speaker || !turn.text) return reply.code(400).send({ error: 'speakerId or speaker, and text required' });
+  if (req.body?.debugOnly) return { ok: true, debugOnly: true, speaker: turn.speaker };
   console.log('[teams/transcript]', turn.speaker, turn.speakerId || '-', turn.text.slice(0, 80));
   turnBuf.add(turn);
   return { ok: true, speaker: turn.speaker, status: orch.status() };
