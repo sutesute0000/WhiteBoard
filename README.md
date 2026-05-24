@@ -36,7 +36,7 @@
 | LLM 出力 | `{ops:[{op:add_graph,nodes,edges,...}], rationale}` |
 | 人 vs AI | `author:'human'` / `status:'confirmed'` / `pinned:true` の AI 書き換え禁止（バックエンドで強制） |
 | 図化 | 1発言ターンごとに、編集可能なノード/エッジの図を生成 |
-| 話者 | 実名特定は必須ではない。`speakerId` を `Speaker 1` のような安定匿名ラベルに正規化 |
+| 話者 | 実名特定は必須ではない。`speakerId` を安定IDとして扱い、表示名がある場合はその担当名を使う |
 | 抽出粒度 | 逐語転記しない。短いノードラベルと意味つきエッジで表現 |
 
 ## ローカル起動
@@ -135,9 +135,9 @@ Turn Buffer → LLM 図化 → Whiteboard UI
 ```
 
 話者の実名特定は必須にしません。ただし、話者が変わったことはシステム処理上重要なので、
-Teams/Speech 側から得た安定した `speakerId` を必ず送ります。バックエンドは
-`speakerId` を `Speaker 1`, `Speaker 2` のような匿名ラベルに正規化し、その変化で
-ターンを区切ります。
+Teams/Speech 側から得た安定した `speakerId` を必ず送ります。表示名を送れる場合は
+`speaker` に担当名を入れます。バックエンドは `speakerId` の変化でターンを区切り、
+表示には `speaker` を優先します。
 
 Teams 側の実装は別サービスとして作る想定です。
 
@@ -159,10 +159,10 @@ Teams Bot を作る前に、個人でも Teams 音声経路を検証できるよ
 
 使い方:
 
-1. 画面上部の `Speaker 1 / Speaker 2 / Speaker 3` を選ぶ
+1. 画面上部の担当者プルダウンから `営業担当A` / `営業課長B` / `技術担当C` / `技術課長D` / `契約担当E` / `法務担当F` / `システム開発担当G` を選ぶ
 2. マイクボタンを押して話す
-3. 話者が変わった想定にしたいときは、プルダウンで別 Speaker に切り替える
-4. 認識された発話は `{meetingId:"browser-teams-test", speakerId, text}` として `/teams/transcript` に送られる
+3. 話者が変わった想定にしたいときは、プルダウンで別の担当者に切り替える
+4. 認識された発話は `{meetingId:"browser-teams-test", speakerId, speaker, text}` として `/teams/transcript` に送られる
 
 実Teamsの音声は取りませんが、WhiteBoard側の `speakerId` 正規化、話者交代によるターン分割、
 LLM図化、SSE反映までを個人で確認できます。
@@ -212,23 +212,95 @@ data: {"type":"summary.added","section":"論点","entry":{...}}
 
 ## Azure へのデプロイ（最小構成）
 
-1. **Azure OpenAI** リソースを作成し、`gpt-5.4` の deployment を作成
-2. **Azure Container Apps** にバックエンドをデプロイ
-   ```bash
-   az containerapp up \
-     --name whiteboard-agent \
-     --resource-group <rg> \
-     --location japaneast \
-     --source ./server \
-     --ingress external --target-port 8787 \
-     --env-vars AZURE_OPENAI_ENDPOINT=... AZURE_OPENAI_KEY=... AZURE_OPENAI_DEPLOYMENT=gpt-5.4
-   ```
-3. **Azure Static Web Apps** にフロントをデプロイ
-   ```bash
-   az staticwebapp create --name whiteboard-ui --source . --location japaneast \
-     --app-location / --output-location dist --branch main
-   ```
-   ビルド時に `VITE_SERVER_URL` を Container Apps の URL に。
+ハッカソン提出では、GitHubにコードを置くだけでなく、実行基盤として Azure を使う必要があります。
+このリポジトリでは以下の構成を想定しています。
+
+```
+Frontend: Azure Static Web Apps
+Backend : Azure Container Apps
+Storage : Azure Files mounted to Container Apps (/app/data)
+AI      : Azure OpenAI + Azure AI Speech
+```
+
+### 1. Azure OpenAI / Speech を用意
+
+- Azure OpenAI deployment を作成
+- Azure AI Speech resource を作成
+
+### 2. バックエンドコンテナをビルドしてプッシュ
+
+例: Azure Container Registry を使う場合。
+
+```bash
+az acr create -g <rg> -n <acrName> --sku Basic
+az acr build -r <acrName> -t whiteboard-server:latest ./server
+```
+
+イメージ名:
+
+```text
+<acrName>.azurecr.io/whiteboard-server:latest
+```
+
+### 3. Azure Container Apps を作成
+
+`infra/container-app.bicep` は、Container Apps、Log Analytics、Azure Files 永続化を作成します。
+`FILE_STORE_PATH=/app/data/boards.json` として、会議ボード履歴を Azure Files に保存します。
+
+```bash
+az deployment group create \
+  -g <rg> \
+  -f infra/container-app.bicep \
+  -p image=<acrName>.azurecr.io/whiteboard-server:latest \
+     registryServer=<acrName>.azurecr.io \
+     registryUsername=<acr-username> \
+     registryPassword=<acr-password> \
+     azureOpenAIEndpoint=https://<resource>.openai.azure.com/ \
+     azureOpenAIKey=<key> \
+     azureOpenAIDeployment=<deployment> \
+     azureSpeechKey=<speech-key> \
+     azureSpeechRegion=<speech-region>
+```
+
+出力された `backendUrl` を控えます。
+
+ACRのユーザー名/パスワードは、検証用途では以下で取得できます。
+
+```bash
+az acr update -n <acrName> --admin-enabled true
+az acr credential show -n <acrName>
+```
+
+### 4. フロントを Azure Static Web Apps へデプロイ
+
+Static Web Apps のビルド環境変数に、Container Apps のURLを設定します。
+
+```text
+VITE_SERVER_URL=https://<container-app-fqdn>
+```
+
+CLI例:
+
+```bash
+az staticwebapp create \
+  --name whiteboard-ui \
+  --resource-group <rg> \
+  --source https://github.com/sutesute0000/WhiteBoard \
+  --location eastasia \
+  --branch main \
+  --app-location / \
+  --output-location dist
+```
+
+Static Web Apps 側の `Application settings` に `VITE_SERVER_URL` を追加して再ビルドします。
+
+### 5. 動作確認
+
+- Static Web Apps のURLを開く
+- 左上でボード作成
+- マイク入力またはサンプル投入
+- 図が生成されること
+- ブラウザ更新後もボード履歴と手動キャンバス状態が復元されること
 
 ## 人手書きテキストの自動同期
 

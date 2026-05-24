@@ -160,12 +160,12 @@ export async function postUtterance(speaker, text) {
   }
 }
 
-export async function postTeamsUtterance(speakerId, text, meetingId = 'browser-teams-test', boardId = 'default') {
+export async function postTeamsUtterance(speakerId, text, meetingId = 'browser-teams-test', boardId = 'default', speaker = '') {
   try {
     const r = await fetch(`${SERVER_URL}/teams/transcript`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ boardId, meetingId, speakerId, text, at: Date.now() }),
+      body: JSON.stringify({ boardId, meetingId, speakerId, speaker, text, at: Date.now() }),
     });
     if (!r.ok) console.warn('postTeamsUtterance failed status', r.status);
     return r.ok;

@@ -15,6 +15,15 @@ const NODE_COLORS = {
 };
 const EDGE_TYPES = ['理由', '結果', '比較・対立', '前提', '具体化', '例', 'リスク', '提案', '結論', '範囲', '範囲外', '時系列'];
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8787';
+const TEST_SPEAKERS = [
+  ['sales-a', '営業担当A'],
+  ['sales-manager-b', '営業課長B'],
+  ['engineer-c', '技術担当C'],
+  ['tech-manager-d', '技術課長D'],
+  ['contract-e', '契約担当E'],
+  ['legal-f', '法務担当F'],
+  ['developer-g', 'システム開発担当G'],
+];
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 const Icon = ({ children }) => (
@@ -45,7 +54,7 @@ export default function Whiteboard() {
   const [size, setSize] = useState(3);
   const [zoom, setZoom] = useState(1);
   const [edgeType, setEdgeType] = useState('理由');
-  const [micSpeakerId, setMicSpeakerId] = useState('speaker-1');
+  const [micSpeakerId, setMicSpeakerId] = useState('sales-a');
   const [boards, setBoards] = useState([]);
   const [boardId, setBoardId] = useState(() => localStorage.getItem('whiteboard.boardId') || 'default');
   const [textInput, setTextInput] = useState(null);
@@ -67,7 +76,7 @@ export default function Whiteboard() {
     start: startSpeech,
     stop: stopSpeech,
   } = useSpeech({
-    onUtterance: ({ text }) => postTeamsUtterance(micSpeakerRef.current, text, 'browser-teams-test', boardId),
+    onUtterance: ({ text }) => postTeamsUtterance(micSpeakerRef.current, text, 'browser-teams-test', boardId, speakerLabel(micSpeakerRef.current)),
   });
 
   const changeMicSpeaker = async (nextSpeakerId) => {
@@ -1060,9 +1069,9 @@ export default function Whiteboard() {
           onChange={(e) => changeMicSpeaker(e.target.value)}
           title="Teams疑似話者"
         >
-          <option value="speaker-1">Speaker 1</option>
-          <option value="speaker-2">Speaker 2</option>
-          <option value="speaker-3">Speaker 3</option>
+          {TEST_SPEAKERS.map(([id, label]) => (
+            <option key={id} value={id}>{label}</option>
+          ))}
         </select>
         <button
           className={`tool mic ${listening ? 'listening' : ''}`}
@@ -1082,7 +1091,7 @@ export default function Whiteboard() {
       {(listening || speechError || speechLastText || speechStatus !== 'idle') && (
         <div className="speech-debug">
           <span className={`speech-dot ${listening ? 'on' : ''}`} />
-          <span>{micSpeakerId.replace('speaker-', 'Speaker ')}</span>
+          <span>{speakerLabel(micSpeakerId)}</span>
           <span className="speech-meter"><span style={{ width: `${Math.round(micLevel * 100)}%` }} /></span>
           <span className="speech-debug-text">{speechError || speechInterimText || speechLastText || speechStatus || 'listening...'}</span>
         </div>
@@ -1216,6 +1225,10 @@ function firstNodeIndex(items) {
 
 function isConnectable(item) {
   return item?.type === 'graphNode' || item?.type === 'text';
+}
+
+function speakerLabel(id) {
+  return TEST_SPEAKERS.find(([speakerId]) => speakerId === id)?.[1] || id;
 }
 
 function nodeCenter(node) {
