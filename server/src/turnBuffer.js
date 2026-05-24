@@ -12,8 +12,23 @@ function uid() { return 't-' + Math.random().toString(36).slice(2, 10); }
 
 export function createTurnBuffer({ onTurn }) {
   let current = null; // { speaker, speakerId?, source?, meetingId?, text, startedAt }
+  let idleTimer = null;
+
+  function clearIdleTimer() {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+
+  function scheduleIdleFlush() {
+    clearIdleTimer();
+    idleTimer = setTimeout(() => {
+      idleTimer = null;
+      emit();
+    }, config.speakerChangeGraceMs);
+  }
 
   function emit() {
+    clearIdleTimer();
     if (!current) return;
     const text = current.text.trim();
     if (text.length >= config.minTurnChars) {
@@ -37,21 +52,25 @@ export function createTurnBuffer({ onTurn }) {
 
     if (!current) {
       current = { speaker, speakerId, source, meetingId, text: clean, startedAt: at };
+      scheduleIdleFlush();
       return;
     }
     if (current.speaker === speaker) {
       current.text += '\n' + clean;
+      scheduleIdleFlush();
       return;
     }
     // 別話者
     if (clean.length < config.minTurnChars) {
       // 短い相槌として現ターンに注記
       current.text += ` [${speaker}: ${clean}]`;
+      scheduleIdleFlush();
       return;
     }
     // 話者交代を確定
     emit();
     current = { speaker, speakerId, source, meetingId, text: clean, startedAt: at };
+    scheduleIdleFlush();
   }
 
   function flush() { emit(); }
