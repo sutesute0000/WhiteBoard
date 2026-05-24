@@ -524,6 +524,24 @@ input[type="range"].size::-moz-range-thumb {
   font-weight: 500;
 }
 
+.speech-meter {
+  width: 54px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(20, 25, 40, 0.10);
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.speech-meter span {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+  background: #0fa37f;
+  transition: width 0.08s linear;
+}
+
 /* ─── AI layer (world-transformed overlay for AI cards) ─────────────────────────────── */
 .ai-layer {
   position: absolute;

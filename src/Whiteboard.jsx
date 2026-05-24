@@ -54,7 +54,16 @@ export default function Whiteboard() {
   const graphItems = useMemo(() => streamItems.filter(it => it.type === 'graph'), [streamItems]);
   const micSpeakerRef = useRef(micSpeakerId);
   micSpeakerRef.current = micSpeakerId;
-  const { listening, error: speechError, lastText: speechLastText, start: startSpeech, stop: stopSpeech } = useSpeech({
+  const {
+    listening,
+    error: speechError,
+    status: speechStatus,
+    lastText: speechLastText,
+    interimText: speechInterimText,
+    micLevel,
+    start: startSpeech,
+    stop: stopSpeech,
+  } = useSpeech({
     onUtterance: ({ text }) => postTeamsUtterance(micSpeakerRef.current, text),
   });
 
@@ -1003,11 +1012,12 @@ export default function Whiteboard() {
       </div>
 
       <div className="hint">矢印は種別を選んでから A で接続 · ノード/テキストを動かすと矢印も追従</div>
-      {(listening || speechError || speechLastText) && (
+      {(listening || speechError || speechLastText || speechStatus !== 'idle') && (
         <div className="speech-debug">
           <span className={`speech-dot ${listening ? 'on' : ''}`} />
           <span>{micSpeakerId.replace('speaker-', 'Speaker ')}</span>
-          <span className="speech-debug-text">{speechError || speechLastText || 'listening...'}</span>
+          <span className="speech-meter"><span style={{ width: `${Math.round(micLevel * 100)}%` }} /></span>
+          <span className="speech-debug-text">{speechError || speechInterimText || speechLastText || speechStatus || 'listening...'}</span>
         </div>
       )}
       <div className="bottom-bar">
