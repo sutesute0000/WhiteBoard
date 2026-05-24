@@ -1,0 +1,18 @@
+{
+  "name": "whiteboard-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "mock": "node src/mockDriver.js"
+  },
+  "dependencies": {
+    "@azure/cosmos": "^4.1.1",
+    "@fastify/cors": "^9.0.1",
+    "dotenv": "^16.6.1",
+    "fastify": "^4.28.1",
+    "openai": "^4.65.0"
+  }
+}
