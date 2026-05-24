@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useBoardStream } from './useBoardStream.js';
-import { useSpeech, postTeamsUtterance } from './useSpeech.js';
+import { useSpeech, postTeamsUtterance, flushTranscript } from './useSpeech.js';
 
 const COLORS = ['#22252c', '#d94f4a', '#3760e0', '#0fa37f', '#e8a23c', '#7e57c2', '#e26ca5'];
 const NODE_COLORS = {
@@ -57,6 +57,12 @@ export default function Whiteboard() {
   const { listening, error: speechError, start: startSpeech, stop: stopSpeech } = useSpeech({
     onUtterance: ({ text }) => postTeamsUtterance(micSpeakerRef.current, text),
   });
+
+  const changeMicSpeaker = async (nextSpeakerId) => {
+    if (nextSpeakerId === micSpeakerRef.current) return;
+    await flushTranscript();
+    setMicSpeakerId(nextSpeakerId);
+  };
 
   const toolRef = useRef(tool); toolRef.current = tool;
   const colorRef = useRef(color); colorRef.current = color;
@@ -962,7 +968,7 @@ export default function Whiteboard() {
         <select
           className="mic-speaker-select"
           value={micSpeakerId}
-          onChange={(e) => setMicSpeakerId(e.target.value)}
+          onChange={(e) => changeMicSpeaker(e.target.value)}
           title="Teams疑似話者"
         >
           <option value="speaker-1">Speaker 1</option>

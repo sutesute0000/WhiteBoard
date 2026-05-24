@@ -92,3 +92,15 @@ export async function postTeamsUtterance(speakerId, text, meetingId = 'browser-t
     console.warn('postTeamsUtterance failed', e);
   }
 }
+
+export async function flushTranscript() {
+  try {
+    await fetch(`${SERVER_URL}/transcript/flush`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+  } catch (e) {
+    console.warn('flushTranscript failed', e);
+  }
+}
