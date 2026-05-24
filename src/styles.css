@@ -345,6 +345,26 @@ input[type="range"].size::-moz-range-thumb {
   box-shadow: 0 0 0 3px rgba(55, 96, 224, 0.12);
 }
 
+.mic-speaker-select {
+  height: 32px;
+  max-width: 104px;
+  border: 1px solid rgba(20, 25, 40, 0.10);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 22px 0 9px;
+  outline: none;
+  cursor: pointer;
+}
+
+.mic-speaker-select:focus {
+  border-color: rgba(55, 96, 224, 0.45);
+  box-shadow: 0 0 0 3px rgba(55, 96, 224, 0.12);
+}
+
 /* ─── Bottom zoom bar ─────────────────────────────── */
 .bottom-bar {
   position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);

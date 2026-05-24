@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useBoardStream } from './useBoardStream.js';
-import { useSpeech, postUtterance } from './useSpeech.js';
+import { useSpeech, postTeamsUtterance } from './useSpeech.js';
 
 const COLORS = ['#22252c', '#d94f4a', '#3760e0', '#0fa37f', '#e8a23c', '#7e57c2', '#e26ca5'];
 const NODE_COLORS = {
@@ -44,6 +44,7 @@ export default function Whiteboard() {
   const [size, setSize] = useState(3);
   const [zoom, setZoom] = useState(1);
   const [edgeType, setEdgeType] = useState('理由');
+  const [micSpeakerId, setMicSpeakerId] = useState('speaker-1');
   const [textInput, setTextInput] = useState(null);
   const [selectionVersion, setSelectionVersion] = useState(0);
   const [, force] = useState(0);
@@ -51,8 +52,10 @@ export default function Whiteboard() {
 
   const { items: streamItems, connected } = useBoardStream();
   const graphItems = useMemo(() => streamItems.filter(it => it.type === 'graph'), [streamItems]);
+  const micSpeakerRef = useRef(micSpeakerId);
+  micSpeakerRef.current = micSpeakerId;
   const { listening, error: speechError, start: startSpeech, stop: stopSpeech } = useSpeech({
-    onUtterance: ({ speaker, text }) => postUtterance(speaker, text),
+    onUtterance: ({ text }) => postTeamsUtterance(micSpeakerRef.current, text),
   });
 
   const toolRef = useRef(tool); toolRef.current = tool;
@@ -956,10 +959,20 @@ export default function Whiteboard() {
           <Icon><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></Icon>
         </ToolBtn>
         <div className="divider" />
+        <select
+          className="mic-speaker-select"
+          value={micSpeakerId}
+          onChange={(e) => setMicSpeakerId(e.target.value)}
+          title="Teams疑似話者"
+        >
+          <option value="speaker-1">Speaker 1</option>
+          <option value="speaker-2">Speaker 2</option>
+          <option value="speaker-3">Speaker 3</option>
+        </select>
         <button
           className={`tool mic ${listening ? 'listening' : ''}`}
           onClick={() => (listening ? stopSpeech() : startSpeech())}
-          data-tooltip={listening ? '録音停止' : 'マイク開始'}
+          data-tooltip={listening ? 'Teams疑似音声停止' : 'Teams疑似音声開始'}
           title={speechError || ''}
         >
           {listening ? (

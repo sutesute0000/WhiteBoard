@@ -134,6 +134,21 @@ teams-audio-ingestor/
 これにより、WhiteBoard 本体はサンプル投入、ブラウザマイク、Teams音声のどれから来た発話でも
 同じ `Turn Buffer → LLM → SSE` の処理で扱えます。
 
+### 個人検証モード
+
+Teams Bot を作る前に、個人でも Teams 音声経路を検証できるように、フロントのマイク入力は
+`/teams/transcript` に送る疑似 Teams ingestor として動きます。
+
+使い方:
+
+1. 画面上部の `Speaker 1 / Speaker 2 / Speaker 3` を選ぶ
+2. マイクボタンを押して話す
+3. 話者が変わった想定にしたいときは、プルダウンで別 Speaker に切り替える
+4. 認識された発話は `{meetingId:"browser-teams-test", speakerId, text}` として `/teams/transcript` に送られる
+
+実Teamsの音声は取りませんが、WhiteBoard側の `speakerId` 正規化、話者交代によるターン分割、
+LLM図化、SSE反映までを個人で確認できます。
+
 ## API
 
 | Method | Path | 用途 |

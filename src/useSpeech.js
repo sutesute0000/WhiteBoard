@@ -80,3 +80,15 @@ export async function postUtterance(speaker, text) {
     console.warn('postUtterance failed', e);
   }
 }
+
+export async function postTeamsUtterance(speakerId, text, meetingId = 'browser-teams-test') {
+  try {
+    await fetch(`${SERVER_URL}/teams/transcript`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ meetingId, speakerId, text, at: Date.now() }),
+    });
+  } catch (e) {
+    console.warn('postTeamsUtterance failed', e);
+  }
+}
