@@ -2,14 +2,15 @@ import { useEffect, useState, useCallback } from 'react';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8787';
 
-export function useBoardStream() {
+export function useBoardStream(boardId = 'default') {
   const [items, setItems] = useState([]);
   const [summaries, setSummaries] = useState({});
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    const loadSnapshot = () => fetch(`${SERVER_URL}/board`)
+    const qs = `?boardId=${encodeURIComponent(boardId)}`;
+    const loadSnapshot = () => fetch(`${SERVER_URL}/board${qs}`)
       .then(r => r.ok ? r.json() : null)
       .then((board) => {
         if (!board || cancelled) return;
@@ -21,7 +22,7 @@ export function useBoardStream() {
     loadSnapshot();
     const poll = setInterval(loadSnapshot, 2500);
 
-    const es = new EventSource(`${SERVER_URL}/events`);
+    const es = new EventSource(`${SERVER_URL}/events${qs}`);
     es.addEventListener('open', () => setConnected(true));
     es.addEventListener('error', () => setConnected(false));
 
@@ -56,19 +57,19 @@ export function useBoardStream() {
       clearInterval(poll);
       es.close();
     };
-  }, []);
+  }, [boardId]);
 
   const confirmItem = useCallback(async (id) => {
-    await fetch(`${SERVER_URL}/items/${id}/confirm`, { method: 'POST' });
-  }, []);
+    await fetch(`${SERVER_URL}/items/${id}/confirm?boardId=${encodeURIComponent(boardId)}`, { method: 'POST' });
+  }, [boardId]);
 
   const dismissItem = useCallback(async (id) => {
-    await fetch(`${SERVER_URL}/items/${id}/dismiss`, { method: 'POST' });
-  }, []);
+    await fetch(`${SERVER_URL}/items/${id}/dismiss?boardId=${encodeURIComponent(boardId)}`, { method: 'POST' });
+  }, [boardId]);
 
   const pinItem = useCallback(async (id) => {
-    await fetch(`${SERVER_URL}/items/${id}/pin`, { method: 'POST' });
-  }, []);
+    await fetch(`${SERVER_URL}/items/${id}/pin?boardId=${encodeURIComponent(boardId)}`, { method: 'POST' });
+  }, [boardId]);
 
   const addHumanItem = useCallback(async (section, text) => {
     try {
@@ -84,7 +85,24 @@ export function useBoardStream() {
   // AI 表示用には author='ai' のみ。human はキャンバスで既に描画済み。
   const aiItems = items.filter(it => it.author === 'ai');
 
-  return { items, aiItems, summaries, connected, confirmItem, dismissItem, pinItem, addHumanItem };
+  const loadCanvas = useCallback(async () => {
+    const r = await fetch(`${SERVER_URL}/canvas?boardId=${encodeURIComponent(boardId)}`);
+    if (!r.ok) return [];
+    const data = await r.json();
+    return data.items || [];
+  }, [boardId]);
+
+  const saveCanvas = useCallback(async (items) => {
+    try {
+      await fetch(`${SERVER_URL}/canvas`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ boardId, items }),
+      });
+    } catch {}
+  }, [boardId]);
+
+  return { items, aiItems, summaries, connected, confirmItem, dismissItem, pinItem, addHumanItem, loadCanvas, saveCanvas };
 }
 
 function applyOps(prev, ops) {

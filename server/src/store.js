@@ -22,6 +22,14 @@ export function createStore({ onPersist } = {}) {
     if (summaries) state.summaries = summaries;
   }
 
+  function dumpState() {
+    return {
+      items: state.items,
+      summaries: state.summaries,
+      turns: state.turns,
+    };
+  }
+
   function persist(kind, payload) {
     if (onPersist) {
       try { onPersist(kind, payload); } catch (e) { console.error('[persist]', e); }
@@ -216,6 +224,6 @@ export function createStore({ onPersist } = {}) {
     confirmItem, pinItem,
     setSummary,
     subscribe, publish,
-    hydrate,
+    hydrate, dumpState,
   };
 }

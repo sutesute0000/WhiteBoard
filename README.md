@@ -81,6 +81,24 @@ npm run dev   # http://localhost:5173
 
 `VITE_SERVER_URL` でバックエンド URL を上書き可能（既定: `http://localhost:8787`）。
 
+## ボード管理と永続化
+
+既定では `STORE=file` として、会議ボード、AI生成図、文字起こしターン、手動キャンバスオブジェクトを
+`server/data/boards.json` に保存します。ブラウザを更新しても、選択中ボードのノード位置、手動追加した
+ノード/矢印/テキスト/ペン描画は復元されます。
+
+画面左上のボードセレクタで履歴を切り替え、`新規` ボタンで会議ごとのボードを作成します。
+録音やサンプル投入は、現在開いている `boardId` に紐づきます。
+
+環境変数:
+
+```bash
+STORE=file
+FILE_STORE_PATH=./data/boards.json
+```
+
+一時メモリだけで動かしたい場合は `STORE=memory` を指定します。
+
 ### 3. モック文字起こし投入
 
 別ターミナルで:
@@ -155,6 +173,10 @@ LLM図化、SSE反映までを個人で確認できます。
 |---|---|---|
 | GET | `/events` | SSE: `snapshot`, `board.diff`, `summary.added` |
 | GET | `/board` | 現在の盤面スナップショット |
+| GET | `/boards` | ボード履歴一覧 |
+| POST | `/boards` | `{title}` 新規ボード作成 |
+| GET | `/canvas?boardId=...` | 手動キャンバス状態の取得 |
+| POST | `/canvas` | `{boardId, items}` 手動キャンバス状態の保存 |
 | POST | `/transcript` | `{speaker, text, at?}` を投入 |
 | POST | `/transcript/external` | `{speakerId?, speaker?, text, meetingId?, at?}` 外部文字起こしを投入 |
 | POST | `/teams/transcript` | `{speakerId?, speaker?, text, meetingId?, at?}` Teams音声ingestorから投入 |

@@ -27,7 +27,8 @@ export const config = {
   stableSections: ['会議の目的', '論点'], // 早期に圧縮対象
 
   // Persistence
-  store: process.env.STORE || 'memory', // memory | cosmos
+  store: process.env.STORE || 'file', // file | memory | cosmos
+  fileStorePath: process.env.FILE_STORE_PATH || './data/boards.json',
   cosmosEndpoint: process.env.COSMOS_ENDPOINT || '',
   cosmosKey: process.env.COSMOS_KEY || '',
   cosmosDatabase: process.env.COSMOS_DATABASE || 'whiteboard',

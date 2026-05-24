@@ -14,6 +14,7 @@ const NODE_COLORS = {
   issue: '#ffe9ef',
 };
 const EDGE_TYPES = ['理由', '結果', '比較・対立', '前提', '具体化', '例', 'リスク', '提案', '結論', '範囲', '範囲外', '時系列'];
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8787';
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 const Icon = ({ children }) => (
@@ -45,12 +46,14 @@ export default function Whiteboard() {
   const [zoom, setZoom] = useState(1);
   const [edgeType, setEdgeType] = useState('理由');
   const [micSpeakerId, setMicSpeakerId] = useState('speaker-1');
+  const [boards, setBoards] = useState([]);
+  const [boardId, setBoardId] = useState(() => localStorage.getItem('whiteboard.boardId') || 'default');
   const [textInput, setTextInput] = useState(null);
   const [selectionVersion, setSelectionVersion] = useState(0);
   const [, force] = useState(0);
   const rerender = useCallback(() => force(n => n + 1), []);
 
-  const { items: streamItems, connected } = useBoardStream();
+  const { items: streamItems, connected, loadCanvas, saveCanvas } = useBoardStream(boardId);
   const graphItems = useMemo(() => streamItems.filter(it => it.type === 'graph'), [streamItems]);
   const micSpeakerRef = useRef(micSpeakerId);
   micSpeakerRef.current = micSpeakerId;
@@ -64,17 +67,45 @@ export default function Whiteboard() {
     start: startSpeech,
     stop: stopSpeech,
   } = useSpeech({
-    onUtterance: ({ text }) => postTeamsUtterance(micSpeakerRef.current, text),
+    onUtterance: ({ text }) => postTeamsUtterance(micSpeakerRef.current, text, 'browser-teams-test', boardId),
   });
 
   const changeMicSpeaker = async (nextSpeakerId) => {
     if (nextSpeakerId === micSpeakerRef.current) return;
     const wasListening = listening;
     if (wasListening) await stopSpeech();
-    await flushTranscript();
+    await flushTranscript(boardId);
     setMicSpeakerId(nextSpeakerId);
     if (wasListening) await startSpeech();
   };
+
+  async function refreshBoards() {
+    try {
+      const r = await fetch(`${SERVER_URL}/boards`);
+      const data = await r.json();
+      setBoards(data.boards || []);
+      if (!data.boards?.some(board => board.id === boardId) && data.boards?.[0]) setBoardId(data.boards[0].id);
+    } catch {}
+  }
+
+  async function createNewBoard() {
+    const title = prompt('新しいボード名', '新しい会議');
+    if (title == null) return;
+    const r = await fetch(`${SERVER_URL}/boards`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title }),
+    });
+    const data = await r.json();
+    await refreshBoards();
+    if (data.board?.id) setBoardId(data.board.id);
+  }
+
+  async function switchBoard(nextBoardId) {
+    if (nextBoardId === boardId) return;
+    await saveCanvas(stateRef.current.items);
+    setBoardId(nextBoardId);
+  }
 
   const toolRef = useRef(tool); toolRef.current = tool;
   const colorRef = useRef(color); colorRef.current = color;
@@ -128,6 +159,33 @@ export default function Whiteboard() {
     drawSelection(ctx, v);
     if (stateRef.current.marquee) drawMarquee(ctx, v);
   }, []);
+
+  useEffect(() => {
+    refreshBoards();
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('whiteboard.boardId', boardId);
+    ingestedGraphIdsRef.current.clear();
+    stateRef.current.items = [];
+    stateRef.current.history = [];
+    stateRef.current.future = [];
+    stateRef.current.selected = new Set();
+    loadCanvas().then(items => {
+      stateRef.current.items = Array.isArray(items) ? items : [];
+      for (const item of stateRef.current.items) {
+        if (item.graphId && item.graphId !== 'user') ingestedGraphIdsRef.current.add(item.graphId);
+      }
+      draw();
+      rerender();
+      setSelectionVersion(v => v + 1);
+    });
+  }, [boardId, loadCanvas, draw, rerender]);
+
+  useEffect(() => {
+    const id = setInterval(() => saveCanvas(stateRef.current.items), 2000);
+    return () => clearInterval(id);
+  }, [saveCanvas]);
 
   useEffect(() => {
     const unseen = graphItems.filter(item => !ingestedGraphIdsRef.current.has(item.id));
@@ -882,6 +940,15 @@ export default function Whiteboard() {
       <div className={`stream-indicator ${connected ? 'on' : 'off'}`}>
         <span className="dot" />
         <span>{connected ? 'LIVE' : 'OFFLINE'}</span>
+      </div>
+
+      <div className="board-switcher">
+        <select value={boardId} onChange={(e) => switchBoard(e.target.value)} title="ボード履歴">
+          {boards.map(board => (
+            <option key={board.id} value={board.id}>{board.title}</option>
+          ))}
+        </select>
+        <button onClick={createNewBoard}>新規</button>
       </div>
 
       {textInput && (

@@ -1,9 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { config } from './config.js';
-import { createStore } from './store.js';
-import { createTurnBuffer } from './turnBuffer.js';
-import { createOrchestrator } from './orchestrator.js';
+import { createBoardManager } from './boardManager.js';
 
 const fastify = Fastify({ logger: { level: 'info' } });
 await fastify.register(cors, { origin: true });
@@ -23,18 +21,13 @@ console.log('[config]', {
   llmInterval: config.llmMinIntervalMs + 'ms',
 });
 
-let store;
-if (config.store === 'cosmos') {
-  const { createCosmosStore } = await import('./cosmosStore.js');
-  store = await createCosmosStore();
-  console.log('[store] cosmos');
-} else {
-  store = createStore();
-  console.log('[store] memory');
-}
-const orch = createOrchestrator(store);
-const turnBuf = createTurnBuffer({ onTurn: (turn) => orch.enqueueTurn(turn) });
+const boards = createBoardManager();
+console.log('[store]', config.store);
 const speakerAliases = new Map();
+
+function boardIdFrom(req) {
+  return req.params?.boardId || req.query?.boardId || req.body?.boardId || 'default';
+}
 
 function anonymousSpeaker(source, meetingId, speakerId) {
   const key = `${source || 'external'}:${meetingId || 'default'}:${speakerId || 'unknown'}`;
@@ -58,6 +51,7 @@ function normalizeTranscript(body = {}, source = 'manual') {
 
 // ---- SSE: /events ----
 fastify.get('/events', async (req, reply) => {
+  const ctx = boards.getContext(boardIdFrom(req));
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
@@ -65,10 +59,10 @@ fastify.get('/events', async (req, reply) => {
     'X-Accel-Buffering': 'no',
   });
   // snapshot first
-  const snapshot = { type: 'snapshot', board: store.getBoard() };
+  const snapshot = { type: 'snapshot', board: ctx.store.getBoard() };
   reply.raw.write(`event: ${snapshot.type}\ndata: ${JSON.stringify(snapshot)}\n\n`);
 
-  const unsub = store.subscribe((event) => {
+  const unsub = ctx.store.subscribe((event) => {
     try {
       reply.raw.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
     } catch {}
@@ -85,53 +79,72 @@ fastify.get('/events', async (req, reply) => {
 });
 
 // ---- REST ----
-fastify.get('/board', async () => store.getBoard());
+fastify.get('/boards', async () => ({ boards: boards.listBoards() }));
+
+fastify.post('/boards', async (req) => {
+  const board = boards.createBoard(req.body?.title);
+  return { ok: true, board };
+});
+
+fastify.get('/board', async (req) => boards.getContext(boardIdFrom(req)).store.getBoard());
+
+fastify.get('/boards/:boardId/board', async (req) => boards.getContext(boardIdFrom(req)).store.getBoard());
+
+fastify.get('/canvas', async (req) => ({ items: boards.getCanvas(boardIdFrom(req)) }));
+
+fastify.post('/canvas', async (req) => {
+  const items = boards.saveCanvas(boardIdFrom(req), req.body?.items || []);
+  return { ok: true, count: items.length };
+});
 
 fastify.post('/transcript', async (req, reply) => {
+  const ctx = boards.getContext(boardIdFrom(req));
   // body: {speaker:string, text:string, at?:number}
   const { speaker, text, at } = normalizeTranscript(req.body, 'manual');
   if (!speaker || !text) return reply.code(400).send({ error: 'speaker and text required' });
-  turnBuf.add({ speaker, text, at });
-  return { ok: true, status: orch.status() };
+  ctx.turnBuf.add({ speaker, text, at });
+  return { ok: true, status: ctx.orch.status() };
 });
 
 fastify.post('/transcript/external', async (req, reply) => {
+  const ctx = boards.getContext(boardIdFrom(req));
   // body: {speakerId?:string, speaker?:string, text:string, meetingId?:string, at?:number}
   // speakerId は実名ではなく、話者交代検出用の安定IDとして扱う。
   const turn = normalizeTranscript(req.body, req.body?.source || 'external');
   if (!turn.speaker || !turn.text) return reply.code(400).send({ error: 'speakerId or speaker, and text required' });
-  turnBuf.add(turn);
-  return { ok: true, speaker: turn.speaker, status: orch.status() };
+  ctx.turnBuf.add(turn);
+  return { ok: true, speaker: turn.speaker, status: ctx.orch.status() };
 });
 
 fastify.post('/teams/transcript', async (req, reply) => {
+  const ctx = boards.getContext(boardIdFrom(req));
   // Teams audio ingestor / Teams media bot からの受け口。
   // 実名特定は不要。speakerId の変化だけでターン境界を維持する。
   const turn = normalizeTranscript(req.body, 'teams');
   if (!turn.speaker || !turn.text) return reply.code(400).send({ error: 'speakerId or speaker, and text required' });
   if (req.body?.debugOnly) return { ok: true, debugOnly: true, speaker: turn.speaker };
   console.log('[teams/transcript]', turn.speaker, turn.speakerId || '-', turn.text.slice(0, 80));
-  turnBuf.add(turn);
-  return { ok: true, speaker: turn.speaker, status: orch.status() };
+  ctx.turnBuf.add(turn);
+  return { ok: true, speaker: turn.speaker, status: ctx.orch.status() };
 });
 
-fastify.post('/transcript/flush', async () => {
-  turnBuf.flush();
+fastify.post('/transcript/flush', async (req) => {
+  boards.getContext(boardIdFrom(req)).turnBuf.flush();
   return { ok: true };
 });
 
 // Human ops
 fastify.post('/items/:id/confirm', async (req) => {
-  const it = store.confirmItem(req.params.id);
+  const it = boards.getContext(boardIdFrom(req)).store.confirmItem(req.params.id);
   return { ok: !!it, item: it };
 });
 
 fastify.post('/items/:id/pin', async (req) => {
-  const it = store.pinItem(req.params.id, true);
+  const it = boards.getContext(boardIdFrom(req)).store.pinItem(req.params.id, true);
   return { ok: !!it, item: it };
 });
 fastify.post('/items/:id/unpin', async (req) => {
-  const it = store.pinItem(req.params.id, false);
+  const it = boards.getContext(boardIdFrom(req)).store.pinItem(req.params.id, false);
   return { ok: !!it, item: it };
 });
 
@@ -139,7 +152,7 @@ fastify.post('/items/:id/unpin', async (req) => {
 fastify.post('/items', async (req, reply) => {
   const { section, text } = req.body || {};
   if (!section || !text) return reply.code(400).send({ error: 'section and text required' });
-  const applied = store.applyDiff([{ op: 'add', section, text }], 'human');
+  const applied = boards.getContext(boardIdFrom(req)).store.applyDiff([{ op: 'add', section, text }], 'human');
   return { ok: true, item: applied[0]?.item };
 });
 
@@ -160,7 +173,7 @@ fastify.get('/speech/token', async (req, reply) => {
 });
 
 fastify.post('/items/:id/dismiss', async (req) => {
-  const applied = store.applyDiff([{ op: 'remove', id: req.params.id }], 'human');
+  const applied = boards.getContext(boardIdFrom(req)).store.applyDiff([{ op: 'remove', id: req.params.id }], 'human');
   return { ok: applied.length > 0 };
 });
 

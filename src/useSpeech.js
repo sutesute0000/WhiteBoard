@@ -160,12 +160,12 @@ export async function postUtterance(speaker, text) {
   }
 }
 
-export async function postTeamsUtterance(speakerId, text, meetingId = 'browser-teams-test') {
+export async function postTeamsUtterance(speakerId, text, meetingId = 'browser-teams-test', boardId = 'default') {
   try {
     const r = await fetch(`${SERVER_URL}/teams/transcript`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ meetingId, speakerId, text, at: Date.now() }),
+      body: JSON.stringify({ boardId, meetingId, speakerId, text, at: Date.now() }),
     });
     if (!r.ok) console.warn('postTeamsUtterance failed status', r.status);
     return r.ok;
@@ -175,12 +175,12 @@ export async function postTeamsUtterance(speakerId, text, meetingId = 'browser-t
   }
 }
 
-export async function flushTranscript() {
+export async function flushTranscript(boardId = 'default') {
   try {
     await fetch(`${SERVER_URL}/transcript/flush`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: '{}',
+      body: JSON.stringify({ boardId }),
     });
   } catch (e) {
     console.warn('flushTranscript failed', e);
