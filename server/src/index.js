@@ -29,6 +29,12 @@ function boardIdFrom(req) {
   return req.params?.boardId || req.query?.boardId || req.body?.boardId || 'default';
 }
 
+function contextOr404(req, reply) {
+  const ctx = boards.getContext(boardIdFrom(req));
+  if (!ctx) reply.code(404).send({ error: 'board not found' });
+  return ctx;
+}
+
 function anonymousSpeaker(source, meetingId, speakerId) {
   const key = `${source || 'external'}:${meetingId || 'default'}:${speakerId || 'unknown'}`;
   if (!speakerAliases.has(key)) speakerAliases.set(key, `Speaker ${speakerAliases.size + 1}`);
@@ -51,7 +57,8 @@ function normalizeTranscript(body = {}, source = 'manual') {
 
 // ---- SSE: /events ----
 fastify.get('/events', async (req, reply) => {
-  const ctx = boards.getContext(boardIdFrom(req));
+  const ctx = contextOr404(req, reply);
+  if (!ctx) return;
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
@@ -86,19 +93,54 @@ fastify.post('/boards', async (req) => {
   return { ok: true, board };
 });
 
-fastify.get('/board', async (req) => boards.getContext(boardIdFrom(req)).store.getBoard());
+fastify.patch('/boards/:boardId', async (req, reply) => {
+  const board = boards.renameBoard(boardIdFrom(req), req.body?.title);
+  if (!board) return reply.code(404).send({ error: 'board not found or title empty' });
+  return { ok: true, board };
+});
 
-fastify.get('/boards/:boardId/board', async (req) => boards.getContext(boardIdFrom(req)).store.getBoard());
+fastify.delete('/boards/:boardId', async (req) => {
+  const result = boards.deleteBoard(boardIdFrom(req));
+  return { ok: result.deleted, nextBoard: result.nextBoard };
+});
 
-fastify.get('/canvas', async (req) => ({ items: boards.getCanvas(boardIdFrom(req)) }));
+fastify.get('/board', async (req, reply) => {
+  const ctx = contextOr404(req, reply);
+  if (!ctx) return;
+  return ctx.store.getBoard();
+});
 
-fastify.post('/canvas', async (req) => {
-  const items = boards.saveCanvas(boardIdFrom(req), req.body?.items || []);
+fastify.get('/boards/:boardId/board', async (req, reply) => {
+  const ctx = contextOr404(req, reply);
+  if (!ctx) return;
+  return ctx.store.getBoard();
+});
+
+fastify.get('/canvas', async (req, reply) => {
+  const items = boards.getCanvas(boardIdFrom(req));
+  if (!items) return reply.code(404).send({ error: 'board not found' });
+  return { items };
+});
+
+fastify.post('/canvas', async (req, reply) => {
+  const boardId = boardIdFrom(req);
+  const ctx = boards.getContext(boardId);
+  if (!ctx) return reply.code(404).send({ error: 'board not found' });
+  const removedGraphIds = Array.isArray(req.body?.removedGraphIds) ? req.body.removedGraphIds.filter(Boolean) : [];
+  if (removedGraphIds.length) {
+    ctx.store.applyDiff(
+      removedGraphIds.map(id => ({ op: 'remove', id })),
+      'human',
+    );
+  }
+  const items = boards.saveCanvas(boardId, req.body?.items || []);
+  if (!items) return reply.code(404).send({ error: 'board not found' });
   return { ok: true, count: items.length };
 });
 
 fastify.post('/transcript', async (req, reply) => {
-  const ctx = boards.getContext(boardIdFrom(req));
+  const ctx = contextOr404(req, reply);
+  if (!ctx) return;
   // body: {speaker:string, text:string, at?:number}
   const { speaker, text, at } = normalizeTranscript(req.body, 'manual');
   if (!speaker || !text) return reply.code(400).send({ error: 'speaker and text required' });
@@ -109,7 +151,8 @@ fastify.post('/transcript', async (req, reply) => {
 });
 
 fastify.post('/transcript/external', async (req, reply) => {
-  const ctx = boards.getContext(boardIdFrom(req));
+  const ctx = contextOr404(req, reply);
+  if (!ctx) return;
   // body: {speakerId?:string, speaker?:string, text:string, meetingId?:string, at?:number}
   // speakerId は実名ではなく、話者交代検出用の安定IDとして扱う。
   const turn = normalizeTranscript(req.body, req.body?.source || 'external');
@@ -120,7 +163,8 @@ fastify.post('/transcript/external', async (req, reply) => {
 });
 
 fastify.post('/teams/transcript', async (req, reply) => {
-  const ctx = boards.getContext(boardIdFrom(req));
+  const ctx = contextOr404(req, reply);
+  if (!ctx) return;
   // Teams audio ingestor / Teams media bot からの受け口。
   // 実名特定は不要。speakerId の変化だけでターン境界を維持する。
   const turn = normalizeTranscript(req.body, 'teams');
@@ -132,23 +176,31 @@ fastify.post('/teams/transcript', async (req, reply) => {
   return { ok: true, speaker: turn.speaker, status: ctx.orch.status() };
 });
 
-fastify.post('/transcript/flush', async (req) => {
-  boards.getContext(boardIdFrom(req)).turnBuf.flush();
+fastify.post('/transcript/flush', async (req, reply) => {
+  const ctx = contextOr404(req, reply);
+  if (!ctx) return;
+  ctx.turnBuf.flush();
   return { ok: true };
 });
 
 // Human ops
-fastify.post('/items/:id/confirm', async (req) => {
-  const it = boards.getContext(boardIdFrom(req)).store.confirmItem(req.params.id);
+fastify.post('/items/:id/confirm', async (req, reply) => {
+  const ctx = contextOr404(req, reply);
+  if (!ctx) return;
+  const it = ctx.store.confirmItem(req.params.id);
   return { ok: !!it, item: it };
 });
 
-fastify.post('/items/:id/pin', async (req) => {
-  const it = boards.getContext(boardIdFrom(req)).store.pinItem(req.params.id, true);
+fastify.post('/items/:id/pin', async (req, reply) => {
+  const ctx = contextOr404(req, reply);
+  if (!ctx) return;
+  const it = ctx.store.pinItem(req.params.id, true);
   return { ok: !!it, item: it };
 });
-fastify.post('/items/:id/unpin', async (req) => {
-  const it = boards.getContext(boardIdFrom(req)).store.pinItem(req.params.id, false);
+fastify.post('/items/:id/unpin', async (req, reply) => {
+  const ctx = contextOr404(req, reply);
+  if (!ctx) return;
+  const it = ctx.store.pinItem(req.params.id, false);
   return { ok: !!it, item: it };
 });
 
@@ -156,7 +208,9 @@ fastify.post('/items/:id/unpin', async (req) => {
 fastify.post('/items', async (req, reply) => {
   const { section, text } = req.body || {};
   if (!section || !text) return reply.code(400).send({ error: 'section and text required' });
-  const applied = boards.getContext(boardIdFrom(req)).store.applyDiff([{ op: 'add', section, text }], 'human');
+  const ctx = contextOr404(req, reply);
+  if (!ctx) return;
+  const applied = ctx.store.applyDiff([{ op: 'add', section, text }], 'human');
   return { ok: true, item: applied[0]?.item };
 });
 
@@ -176,8 +230,10 @@ fastify.get('/speech/token', async (req, reply) => {
   }
 });
 
-fastify.post('/items/:id/dismiss', async (req) => {
-  const applied = boards.getContext(boardIdFrom(req)).store.applyDiff([{ op: 'remove', id: req.params.id }], 'human');
+fastify.post('/items/:id/dismiss', async (req, reply) => {
+  const ctx = contextOr404(req, reply);
+  if (!ctx) return;
+  const applied = ctx.store.applyDiff([{ op: 'remove', id: req.params.id }], 'human');
   return { ok: applied.length > 0 };
 });
 

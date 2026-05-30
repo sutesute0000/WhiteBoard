@@ -103,12 +103,12 @@ export function useBoardStream(boardId = 'default') {
     return data.items || [];
   }, [boardId]);
 
-  const saveCanvas = useCallback(async (items) => {
+  const saveCanvas = useCallback(async (items, options = {}) => {
     try {
       await fetch(`${SERVER_URL}/canvas`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ boardId, items }),
+        body: JSON.stringify({ boardId, items, removedGraphIds: options.removedGraphIds || [] }),
       });
     } catch {}
   }, [boardId]);

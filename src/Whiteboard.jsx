@@ -13,7 +13,7 @@ const NODE_COLORS = {
   result: '#fff0d7',
   issue: '#ffe9ef',
 };
-const EDGE_TYPES = ['理由', '結果', '比較・対立', '前提', '具体化', '例', 'リスク', '提案', '結論', '範囲', '範囲外', '時系列'];
+const EDGE_TYPES = ['原因', '結果', '根拠', '反論', '条件', '制約', '選択肢', '比較', '対応', '含む', '順序'];
 const CUSTOM_EDGE_TYPE = '__custom__';
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:8787';
 const TEST_SPEAKERS = [
@@ -55,7 +55,7 @@ export default function Whiteboard() {
   const [size, setSize] = useState(3);
   const [textSize, setTextSize] = useState(24);
   const [zoom, setZoom] = useState(1);
-  const [edgeType, setEdgeType] = useState('理由');
+  const [edgeType, setEdgeType] = useState('根拠');
   const [customEdgeLabel, setCustomEdgeLabel] = useState('');
   const [micSpeakerId, setMicSpeakerId] = useState('sales-a');
   const [boards, setBoards] = useState([]);
@@ -91,12 +91,12 @@ export default function Whiteboard() {
     if (wasListening) await startSpeech();
   };
 
-  async function refreshBoards() {
+  async function refreshBoards(currentBoardId = boardId) {
     try {
       const r = await fetch(`${SERVER_URL}/boards`);
       const data = await r.json();
       setBoards(data.boards || []);
-      if (!data.boards?.some(board => board.id === boardId) && data.boards?.[0]) setBoardId(data.boards[0].id);
+      if (!data.boards?.some(board => board.id === currentBoardId) && data.boards?.[0]) setBoardId(data.boards[0].id);
     } catch {}
   }
 
@@ -111,6 +111,31 @@ export default function Whiteboard() {
     const data = await r.json();
     await refreshBoards();
     if (data.board?.id) setBoardId(data.board.id);
+  }
+
+  async function renameCurrentBoard() {
+    const current = boards.find(board => board.id === boardId);
+    const title = prompt('ボード名を変更', current?.title || '');
+    if (title == null) return;
+    const nextTitle = title.trim();
+    if (!nextTitle) return;
+    const r = await fetch(`${SERVER_URL}/boards/${encodeURIComponent(boardId)}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: nextTitle }),
+    });
+    if (r.ok) await refreshBoards();
+  }
+
+  async function deleteCurrentBoard() {
+    const current = boards.find(board => board.id === boardId);
+    if (!confirm(`「${current?.title || boardId}」を削除しますか？`)) return;
+    const r = await fetch(`${SERVER_URL}/boards/${encodeURIComponent(boardId)}`, { method: 'DELETE' });
+    if (!r.ok) return;
+    const data = await r.json();
+    const nextBoardId = data.nextBoard?.id || 'default';
+    setBoardId(nextBoardId);
+    await refreshBoards(nextBoardId);
   }
 
   async function switchBoard(nextBoardId) {
@@ -186,6 +211,17 @@ export default function Whiteboard() {
     if (stateRef.current.marquee) drawMarquee(ctx, v);
   }, []);
 
+  const persistCanvasNow = useCallback((removedGraphIds = []) => {
+    saveCanvas(stateRef.current.items, { removedGraphIds: [...removedGraphIds].filter(id => id && id !== 'user') });
+  }, [saveCanvas]);
+
+  const forgetPersistedGraphs = useCallback((graphIds) => {
+    for (const graphId of graphIds) {
+      if (!graphId || graphId === 'user') continue;
+      ingestedGraphIdsRef.current.delete(graphId);
+    }
+  }, []);
+
   const addTextItemAt = useCallback((worldX, worldY, text) => {
     const value = String(text || '').trim();
     if (!value) return;
@@ -201,7 +237,8 @@ export default function Whiteboard() {
     });
     draw();
     rerender();
-  }, [draw, rerender]);
+    persistCanvasNow();
+  }, [draw, rerender, persistCanvasNow]);
 
   useEffect(() => {
     refreshBoards();
@@ -241,6 +278,7 @@ export default function Whiteboard() {
       stateRef.current.selected = new Set([...stateRef.current.selected].filter(id => stateRef.current.items.some(item => item.id === id)));
       draw();
       rerender();
+      persistCanvasNow();
     }
     if (unseen.length === 0) return;
     pushHistory();
@@ -253,7 +291,8 @@ export default function Whiteboard() {
     }
     draw();
     rerender();
-  }, [graphItems, draw, rerender]);
+    persistCanvasNow();
+  }, [graphItems, draw, rerender, persistCanvasNow]);
 
   useEffect(() => {
     if (!textInput || !textareaRef.current) return;
@@ -409,7 +448,7 @@ export default function Whiteboard() {
       ctx.stroke();
     }
     drawArrow(ctx, bend, end, it.id);
-    if (it.label) drawEdgeLabel(ctx, it.label, mid.x, mid.y);
+    if (it.label) drawEdgeLabel(ctx, displayEdgeLabel(it.label), mid.x, mid.y);
     ctx.restore();
   }
 
@@ -616,6 +655,7 @@ export default function Whiteboard() {
         setSelectionVersion(v => v + 1);
         draw();
         rerender();
+        persistCanvasNow();
         setTextInput({
           screenX: e.clientX,
           screenY: e.clientY,
@@ -656,6 +696,7 @@ export default function Whiteboard() {
           st.edgeDraft = null;
           draw();
           rerender();
+          persistCanvasNow();
           setSelectionVersion(v => v + 1);
         }
         return;
@@ -757,9 +798,11 @@ export default function Whiteboard() {
         return;
       }
       if (st.dragging) {
-        if (st.dragging.moved) pushHistory();
+        const moved = st.dragging.moved;
+        if (moved) pushHistory();
         st.dragging = null;
         rerender();
+        if (moved) persistCanvasNow();
         return;
       }
       if (st.marquee) {
@@ -782,6 +825,7 @@ export default function Whiteboard() {
         st.items.push(st.drawing);
         st.drawing = null;
         draw(); rerender();
+        persistCanvasNow();
       }
     };
 
@@ -807,7 +851,7 @@ export default function Whiteboard() {
         });
         return;
       }
-      const value = hit.type === 'text' ? hit.text : hit.label;
+      const value = hit.type === 'text' ? hit.text : (hit.type === 'graphEdge' ? displayEdgeLabel(hit.label) : hit.label);
       setTextInput({
         screenX: e.clientX,
         screenY: e.clientY,
@@ -861,7 +905,7 @@ export default function Whiteboard() {
       canvas.removeEventListener('dragover', onDragOver);
       canvas.removeEventListener('drop', onDrop);
     };
-  }, [addTextItemAt, draw, rerender, textInput]);
+  }, [addTextItemAt, draw, persistCanvasNow, rerender, textInput]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -911,6 +955,7 @@ export default function Whiteboard() {
     st.items = st.history.pop();
     st.selected = new Set();
     draw(); rerender(); setSelectionVersion(v => v + 1);
+    persistCanvasNow();
   };
 
   const doRedo = () => {
@@ -920,6 +965,7 @@ export default function Whiteboard() {
     st.items = st.future.pop();
     st.selected = new Set();
     draw(); rerender(); setSelectionVersion(v => v + 1);
+    persistCanvasNow();
   };
 
   const deleteSelection = () => {
@@ -930,9 +976,12 @@ export default function Whiteboard() {
     for (const it of st.items) {
       if (it.type === 'graphEdge' && (rm.has(it.from) || rm.has(it.to))) rm.add(it.id);
     }
+    const removedGraphIds = new Set(st.items.filter(it => rm.has(it.id)).map(it => it.graphId));
     st.items = st.items.filter(it => !rm.has(it.id));
     st.selected = new Set();
+    forgetPersistedGraphs(removedGraphIds);
     draw(); rerender(); setSelectionVersion(v => v + 1);
+    persistCanvasNow(removedGraphIds);
   };
 
   const groupSelection = () => {
@@ -942,6 +991,7 @@ export default function Whiteboard() {
     const gid = 'g-' + uid();
     for (const it of st.items) if (st.selected.has(it.id)) it.groupId = gid;
     draw(); rerender();
+    persistCanvasNow();
   };
 
   const ungroupSelection = () => {
@@ -949,16 +999,20 @@ export default function Whiteboard() {
     pushHistory();
     for (const it of st.items) if (st.selected.has(it.id)) delete it.groupId;
     draw(); rerender();
+    persistCanvasNow();
   };
 
   const clearAll = () => {
     if (!confirm('すべて消去しますか？')) return;
     const st = stateRef.current;
     pushHistory();
+    const removedGraphIds = new Set(st.items.map(it => it.graphId));
     st.items = [];
     st.selected = new Set();
     ingestedGraphIdsRef.current.clear();
+    forgetPersistedGraphs(removedGraphIds);
     draw(); rerender(); setSelectionVersion(v => v + 1);
+    persistCanvasNow(removedGraphIds);
   };
 
   const resetView = () => {
@@ -997,6 +1051,7 @@ export default function Whiteboard() {
         }
         else if (it) it.label = value;
         draw(); rerender();
+        persistCanvasNow();
       }
       setTextInput(null);
       return;
@@ -1013,6 +1068,7 @@ export default function Whiteboard() {
         size: textInput.size || textSize,
       });
       draw(); rerender();
+      persistCanvasNow();
     }
     setTextInput(null);
   };
@@ -1040,6 +1096,7 @@ export default function Whiteboard() {
     draw();
     rerender();
     setSelectionVersion(v => v + 1);
+    persistCanvasNow();
   };
 
   const createGraphNode = (x, y) => ({
@@ -1062,25 +1119,178 @@ export default function Whiteboard() {
   const canUngroup = selectedItems.some(it => it.groupId);
   const canDelete = selectedItems.length > 0;
   const hasSelectedText = selectedItems.some(it => it.type === 'text');
+  const hasSelectedEdge = selectedItems.some(it => it.type === 'graphEdge');
   const showTextSizeControl = tool === 'text' || hasSelectedText || !!textInput;
+  const showEdgeControls = tool === 'edge';
+  const showStrokeControls = tool === 'pen' || tool === 'eraser';
+  const showColorControls = showStrokeControls || showTextSizeControl;
+  const showSelectionActions = selectedItems.length > 0;
+  const showContextBar = showStrokeControls || showTextSizeControl;
   void selectionVersion;
 
   return (
     <div className="board-root">
       <canvas ref={canvasRef} className="board" />
 
-      <div className={`stream-indicator ${connected ? 'on' : 'off'}`}>
-        <span className="dot" />
-        <span>{connected ? 'LIVE' : 'OFFLINE'}</span>
-      </div>
+      <div className="top-controls">
+        <div className="board-switcher">
+          <select value={boardId} onChange={(e) => switchBoard(e.target.value)} title="ボード履歴">
+            {boards.map(board => (
+              <option key={board.id} value={board.id}>{board.title}</option>
+            ))}
+          </select>
+          <button onClick={createNewBoard} aria-label="新規ボード" title="新規ボード">
+            <Icon><path d="M12 5v14M5 12h14"/></Icon>
+          </button>
+          <button onClick={renameCurrentBoard} disabled={boards.length === 0} aria-label="ボード名を変更" title="ボード名を変更">
+            <Icon><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></Icon>
+          </button>
+          <button onClick={deleteCurrentBoard} disabled={boards.length === 0} className="danger" aria-label="ボードを削除" title="ボードを削除">
+            <Icon><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></Icon>
+          </button>
+        </div>
 
-      <div className="board-switcher">
-        <select value={boardId} onChange={(e) => switchBoard(e.target.value)} title="ボード履歴">
-          {boards.map(board => (
-            <option key={board.id} value={board.id}>{board.title}</option>
+        <div className="tool-palette">
+        <ToolBtn active={tool === 'select'} onClick={() => setTool('select')} tooltip="選択 (V)">
+          <Icon><path d="M3 3l7.5 17.5 2.5-8 8-2.5L3 3z"/></Icon>
+        </ToolBtn>
+        <ToolBtn active={tool === 'pen'} onClick={() => setTool('pen')} tooltip="ペン (P)">
+          <Icon><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></Icon>
+        </ToolBtn>
+        <ToolBtn active={tool === 'eraser'} onClick={() => setTool('eraser')} tooltip="消しゴム (E)">
+          <Icon><path d="M20 20H7L3 16a2 2 0 010-2.83l10-10a2 2 0 012.83 0l5.66 5.66a2 2 0 010 2.83L11.41 20"/><path d="M18 13l-6-6"/></Icon>
+        </ToolBtn>
+        <ToolBtn active={tool === 'text'} onClick={activateTextTool} tooltip="テキスト (T)">
+          <Icon><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></Icon>
+        </ToolBtn>
+        <ToolBtn active={tool === 'node'} onClick={() => setTool('node')} tooltip="ノード追加 (N)">
+          <Icon><rect x="4" y="5" width="16" height="12" rx="3"/><path d="M12 9v4M10 11h4"/></Icon>
+        </ToolBtn>
+        <div className="edge-tool-wrap">
+          <ToolBtn active={tool === 'edge'} onClick={() => setTool('edge')} tooltip="矢印追加: ノード/テキスト (A)">
+            <Icon><path d="M5 12h13"/><path d="M14 7l5 5-5 5"/><circle cx="5" cy="12" r="2"/></Icon>
+          </ToolBtn>
+          {showEdgeControls && (
+            <div className="edge-popover">
+              <div className="edge-option-grid">
+                {EDGE_TYPES.map(type => (
+                  <button
+                    key={type}
+                    className={`edge-option ${edgeType === type ? 'active' : ''}`}
+                    onClick={() => setEdgeType(type)}
+                    type="button"
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+              <input
+                className="edge-custom-input"
+                value={edgeType === CUSTOM_EDGE_TYPE ? customEdgeLabel : ''}
+                onChange={(e) => {
+                  setEdgeType(CUSTOM_EDGE_TYPE);
+                  setCustomEdgeLabel(e.target.value);
+                }}
+                onFocus={() => setEdgeType(CUSTOM_EDGE_TYPE)}
+                placeholder="自由記述"
+                title="自由記述の矢印ラベル"
+              />
+            </div>
+          )}
+        </div>
+        <ToolBtn active={tool === 'hand'} onClick={() => setTool('hand')} tooltip="移動 (H / Space)">
+          <Icon>
+            <path d="M18 11V6a2 2 0 00-4 0v4"/>
+            <path d="M14 10V4a2 2 0 00-4 0v6"/>
+            <path d="M10 10.5V6a2 2 0 00-4 0v8"/>
+            <path d="M18 8a2 2 0 114 0v6a8 8 0 01-8 8h-2c-2.8 0-4.5-.86-6-2.34l-3.6-3.6a2 2 0 112.83-2.82L7 15"/>
+          </Icon>
+        </ToolBtn>
+        </div>
+
+        {showContextBar && (
+          <div className="context-bar">
+            {showColorControls && (
+              <div className="color-row">
+                {COLORS.map(c => (
+                  <button key={c} className={`color ${color === c ? 'active' : ''}`} style={{ background: c }} onClick={() => { setColor(c); if (tool === 'eraser') setTool('pen'); }} />
+                ))}
+              </div>
+            )}
+            {showStrokeControls && (
+              <div className="size-wrap">
+                <div className="size-preview">
+                  <div className="size-dot" style={{ width: Math.min(size, 18) + 'px', height: Math.min(size, 18) + 'px', background: color }} />
+                </div>
+                <input className="size" type="range" min="1" max="60" value={size} style={{ '--p': ((size - 1) / 59 * 100) + '%' }} onChange={(e) => setSize(parseInt(e.target.value, 10))} />
+              </div>
+            )}
+            {showTextSizeControl && (
+              <div className="text-size-wrap">
+                <span className="text-size-label">T</span>
+                <input className="text-size" type="range" min="12" max="96" value={textInput?.size || textSize} style={{ '--p': (((textInput?.size || textSize) - 12) / 84 * 100) + '%' }} onChange={(e) => applyTextSize(parseInt(e.target.value, 10))} title="文字サイズ" />
+                <input className="text-size-number" type="number" min="12" max="96" value={textInput?.size || textSize} onChange={(e) => applyTextSize(parseInt(e.target.value, 10))} title="文字サイズ" />
+              </div>
+            )}
+          </div>
+        )}
+
+        {showSelectionActions && (
+          <div className="selection-toolbar">
+            <ToolBtn disabled={!canGroup} onClick={groupSelection} tooltip="グループ化 (Ctrl+G)">
+              <Icon><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></Icon>
+            </ToolBtn>
+            <ToolBtn disabled={!canUngroup} onClick={ungroupSelection} tooltip="グループ解除 (Ctrl+Shift+G)">
+              <Icon><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><path d="M10 7h4M7 10v4"/></Icon>
+            </ToolBtn>
+            <ToolBtn disabled={!canDelete} onClick={deleteSelection} tooltip="削除 (Del)">
+              <Icon><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></Icon>
+            </ToolBtn>
+          </div>
+        )}
+
+        <div className="utility-actions">
+          <ToolBtn disabled={st.history.length === 0} onClick={doUndo} tooltip="元に戻す (Ctrl+Z)">
+            <Icon><path d="M3 7v6h6"/><path d="M21 17a9 9 0 00-15-6.7L3 13"/></Icon>
+          </ToolBtn>
+          <ToolBtn disabled={st.future.length === 0} onClick={doRedo} tooltip="やり直す (Ctrl+Y)">
+            <Icon><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0115-6.7L21 13"/></Icon>
+          </ToolBtn>
+          <ToolBtn onClick={savePng} tooltip="PNG保存 (Ctrl+S)">
+            <Icon><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></Icon>
+          </ToolBtn>
+        </div>
+
+        <div className="app-actions">
+        <select
+          className="mic-speaker-select"
+          value={micSpeakerId}
+          onChange={(e) => changeMicSpeaker(e.target.value)}
+          title="Teams疑似話者"
+        >
+          {TEST_SPEAKERS.map(([id, label]) => (
+            <option key={id} value={id}>{label}</option>
           ))}
         </select>
-        <button onClick={createNewBoard}>新規</button>
+        <button
+          className={`tool mic ${listening ? 'listening' : ''}`}
+          onClick={() => (listening ? stopSpeech() : startSpeech())}
+          data-tooltip={listening ? 'Teams疑似音声停止' : 'Teams疑似音声開始'}
+          title={speechError || ''}
+        >
+          {listening ? (
+            <Icon><rect x="6" y="6" width="12" height="12" rx="2"/></Icon>
+          ) : (
+            <Icon><path d="M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></Icon>
+          )}
+        </button>
+
+          <div className={`stream-indicator ${connected ? 'on' : 'off'}`}>
+            <span className="dot" />
+            <span>{connected ? 'LIVE' : 'OFFLINE'}</span>
+          </div>
+        </div>
+
       </div>
 
       {textInput && (
@@ -1109,145 +1319,6 @@ export default function Whiteboard() {
           rows={1}
         />
       )}
-
-      <div className="toolbar">
-        <ToolBtn active={tool === 'select'} onClick={() => setTool('select')} tooltip="選択 (V)">
-          <Icon><path d="M3 3l7.5 17.5 2.5-8 8-2.5L3 3z"/></Icon>
-        </ToolBtn>
-        <ToolBtn active={tool === 'pen'} onClick={() => setTool('pen')} tooltip="ペン (P)">
-          <Icon><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></Icon>
-        </ToolBtn>
-        <ToolBtn active={tool === 'eraser'} onClick={() => setTool('eraser')} tooltip="消しゴム (E)">
-          <Icon><path d="M20 20H7L3 16a2 2 0 010-2.83l10-10a2 2 0 012.83 0l5.66 5.66a2 2 0 010 2.83L11.41 20"/><path d="M18 13l-6-6"/></Icon>
-        </ToolBtn>
-        <ToolBtn active={tool === 'text'} onClick={activateTextTool} tooltip="テキスト (T)">
-          <Icon><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></Icon>
-        </ToolBtn>
-        <ToolBtn active={tool === 'node'} onClick={() => setTool('node')} tooltip="ノード追加 (N)">
-          <Icon><rect x="4" y="5" width="16" height="12" rx="3"/><path d="M12 9v4M10 11h4"/></Icon>
-        </ToolBtn>
-        <ToolBtn active={tool === 'edge'} onClick={() => setTool('edge')} tooltip="矢印追加: ノード/テキスト (A)">
-          <Icon><path d="M5 12h13"/><path d="M14 7l5 5-5 5"/><circle cx="5" cy="12" r="2"/></Icon>
-        </ToolBtn>
-        <select
-          className="edge-type-select"
-          value={edgeType}
-          onChange={(e) => setEdgeType(e.target.value)}
-          title="矢印の意味"
-        >
-          {EDGE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
-          <option value={CUSTOM_EDGE_TYPE}>自由記述</option>
-        </select>
-        {edgeType === CUSTOM_EDGE_TYPE && (
-          <input
-            className="edge-label-input"
-            value={customEdgeLabel}
-            onChange={(e) => setCustomEdgeLabel(e.target.value)}
-            placeholder="関係ラベル"
-            title="自由記述の矢印ラベル"
-          />
-        )}
-        <ToolBtn active={tool === 'hand'} onClick={() => setTool('hand')} tooltip="移動 (H / Space)">
-          <Icon>
-            <path d="M18 11V6a2 2 0 00-4 0v4"/>
-            <path d="M14 10V4a2 2 0 00-4 0v6"/>
-            <path d="M10 10.5V6a2 2 0 00-4 0v8"/>
-            <path d="M18 8a2 2 0 114 0v6a8 8 0 01-8 8h-2c-2.8 0-4.5-.86-6-2.34l-3.6-3.6a2 2 0 112.83-2.82L7 15"/>
-          </Icon>
-        </ToolBtn>
-
-        <div className="divider" />
-        <div className="color-row">
-          {COLORS.map(c => (
-            <button key={c} className={`color ${color === c ? 'active' : ''}`}
-              style={{ background: c }}
-              onClick={() => { setColor(c); if (tool === 'eraser') setTool('pen'); }} />
-          ))}
-        </div>
-        <div className="divider" />
-        <div className="size-wrap">
-          <div className="size-preview">
-            <div className="size-dot" style={{ width: Math.min(size, 18) + 'px', height: Math.min(size, 18) + 'px', background: color }} />
-          </div>
-          <input className="size" type="range" min="1" max="60" value={size}
-            style={{ '--p': ((size - 1) / 59 * 100) + '%' }}
-            onChange={(e) => setSize(parseInt(e.target.value, 10))} />
-        </div>
-        {showTextSizeControl && (
-          <>
-            <div className="divider" />
-            <div className="text-size-wrap">
-              <span className="text-size-label">T</span>
-              <input
-                className="text-size"
-                type="range"
-                min="12"
-                max="96"
-                value={textInput?.size || textSize}
-                style={{ '--p': (((textInput?.size || textSize) - 12) / 84 * 100) + '%' }}
-                onChange={(e) => applyTextSize(parseInt(e.target.value, 10))}
-                title="文字サイズ"
-              />
-              <input
-                className="text-size-number"
-                type="number"
-                min="12"
-                max="96"
-                value={textInput?.size || textSize}
-                onChange={(e) => applyTextSize(parseInt(e.target.value, 10))}
-                title="文字サイズ"
-              />
-            </div>
-          </>
-        )}
-        <div className="divider" />
-        <ToolBtn disabled={!canGroup} onClick={groupSelection} tooltip="グループ化 (Ctrl+G)">
-          <Icon><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></Icon>
-        </ToolBtn>
-        <ToolBtn disabled={!canUngroup} onClick={ungroupSelection} tooltip="グループ解除 (Ctrl+Shift+G)">
-          <Icon><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><path d="M10 7h4M7 10v4"/></Icon>
-        </ToolBtn>
-        <ToolBtn disabled={!canDelete} onClick={deleteSelection} tooltip="削除 (Del)">
-          <Icon><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></Icon>
-        </ToolBtn>
-        <div className="divider" />
-        <ToolBtn disabled={st.history.length === 0} onClick={doUndo} tooltip="元に戻す (Ctrl+Z)">
-          <Icon><path d="M3 7v6h6"/><path d="M21 17a9 9 0 00-15-6.7L3 13"/></Icon>
-        </ToolBtn>
-        <ToolBtn disabled={st.future.length === 0} onClick={doRedo} tooltip="やり直す (Ctrl+Y)">
-          <Icon><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0115-6.7L21 13"/></Icon>
-        </ToolBtn>
-        <ToolBtn onClick={clearAll} tooltip="クリア">
-          <Icon><path d="M21 6H8M21 12H8M21 18H8"/><path d="M3 6l2 2-2 2M3 12l2 2-2 2"/></Icon>
-        </ToolBtn>
-        <div className="divider" />
-        <ToolBtn onClick={savePng} tooltip="PNG保存 (Ctrl+S)">
-          <Icon><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></Icon>
-        </ToolBtn>
-        <div className="divider" />
-        <select
-          className="mic-speaker-select"
-          value={micSpeakerId}
-          onChange={(e) => changeMicSpeaker(e.target.value)}
-          title="Teams疑似話者"
-        >
-          {TEST_SPEAKERS.map(([id, label]) => (
-            <option key={id} value={id}>{label}</option>
-          ))}
-        </select>
-        <button
-          className={`tool mic ${listening ? 'listening' : ''}`}
-          onClick={() => (listening ? stopSpeech() : startSpeech())}
-          data-tooltip={listening ? 'Teams疑似音声停止' : 'Teams疑似音声開始'}
-          title={speechError || ''}
-        >
-          {listening ? (
-            <Icon><rect x="6" y="6" width="12" height="12" rx="2"/></Icon>
-          ) : (
-            <Icon><path d="M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></Icon>
-          )}
-        </button>
-      </div>
 
       <div className="hint">矢印は種別を選んでから A で接続 · ノード/テキストを動かすと矢印も追従</div>
       {(listening || speechError || speechLastText || speechStatus !== 'idle') && (
@@ -1444,6 +1515,23 @@ function isConnectable(item) {
 function currentEdgeLabel(edgeType, customLabel) {
   const label = edgeType === CUSTOM_EDGE_TYPE ? String(customLabel || '').trim() : edgeType;
   return label || '関連';
+}
+
+function displayEdgeLabel(label) {
+  const legacy = {
+    CAUSE: '原因',
+    RESULT: '結果',
+    SUPPORT: '根拠',
+    OPPOSE: '反論',
+    CONDITION: '条件',
+    CONSTRAINT: '制約',
+    OPTION: '選択肢',
+    COMPARE: '比較',
+    ACTION: '対応',
+    SCOPE: '含む',
+    SEQUENCE: '順序',
+  };
+  return legacy[label] || label;
 }
 
 function textFont(size) {

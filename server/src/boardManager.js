@@ -85,7 +85,7 @@ export function createBoardManager() {
   }
 
   function getContext(boardId = 'default') {
-    if (!records.has(boardId)) createRecord({ id: boardId, title: boardId });
+    if (!records.has(boardId)) return null;
     if (contexts.has(boardId)) return contexts.get(boardId);
 
     const rec = records.get(boardId);
@@ -116,12 +116,34 @@ export function createBoardManager() {
     return rec;
   }
 
+  function renameBoard(boardId = 'default', title) {
+    const nextTitle = String(title || '').trim();
+    if (!nextTitle) return null;
+    const ctx = getContext(boardId);
+    if (!ctx) return null;
+    ctx.board.title = nextTitle;
+    ctx.board.updatedAt = Date.now();
+    saveNow();
+    return ctx.board;
+  }
+
+  function deleteBoard(boardId = 'default') {
+    if (!records.has(boardId)) return { deleted: false, nextBoard: listBoards()[0] || null };
+    records.delete(boardId);
+    contexts.delete(boardId);
+    if (records.size === 0) createRecord({ id: 'default', title: 'Default Board' });
+    saveNow();
+    return { deleted: true, nextBoard: listBoards()[0] || null };
+  }
+
   function getCanvas(boardId = 'default') {
+    if (!records.has(boardId)) return null;
     return records.get(boardId)?.canvas || [];
   }
 
   function saveCanvas(boardId = 'default', items = []) {
     const ctx = getContext(boardId);
+    if (!ctx) return null;
     ctx.board.canvas = Array.isArray(items) ? items : [];
     ctx.board.updatedAt = Date.now();
     scheduleSave();
@@ -131,6 +153,9 @@ export function createBoardManager() {
   return {
     listBoards,
     createBoard,
+    renameBoard,
+    deleteBoard,
+    hasBoard: (boardId = 'default') => records.has(boardId),
     getContext,
     getCanvas,
     saveCanvas,
